@@ -21,6 +21,12 @@ const userSchema = new mongoose.Schema(
       default: 'user',
       index: true,
     },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'suspended'],
+      default: 'active',
+      index: true,
+    },
     isPhoneVerified: { type: Boolean, default: false },
     firstName: String,
     bio: { type: String, trim: true, maxlength: 500, default: '' },

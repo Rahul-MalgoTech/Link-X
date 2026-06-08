@@ -18,6 +18,11 @@ export async function requireAuth(req, _res, next) {
       error.status = 401;
       throw error;
     }
+    if (user.accountStatus === 'suspended') {
+      const error = new Error('This account has been suspended');
+      error.status = 403;
+      throw error;
+    }
 
     req.user = user;
     next();

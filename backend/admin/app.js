@@ -5,6 +5,11 @@ const state = {
   user: null,
   events: [],
   editingId: null,
+  users: [],
+  usersPage: 1,
+  usersHasMore: false,
+  editingUserId: null,
+  activeView: 'events',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -12,6 +17,8 @@ const loginView = $('#login-view');
 const dashboardView = $('#dashboard-view');
 const eventGrid = $('#event-grid');
 const eventModal = $('#event-modal');
+const userModal = $('#user-modal');
+const userTableBody = $('#user-table-body');
 
 async function api(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
@@ -60,7 +67,7 @@ async function enterDashboard() {
   dashboardView.classList.remove('hidden');
   $('#admin-phone').textContent =
     `${data.user.countryCode || ''} ${data.user.phoneNumber || ''}`.trim();
-  await loadEvents();
+  await setView(state.activeView);
 }
 
 $('#login-form').addEventListener('submit', async (event) => {
@@ -193,6 +200,254 @@ function toLocalInput(dateValue) {
   return local.toISOString().slice(0, 16);
 }
 
+function toDateInput(dateValue) {
+  if (!dateValue) return '';
+  const date = new Date(dateValue);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
+
+function setChecked(selector, value) {
+  $(selector).checked = value !== false;
+}
+
+function optionalNumber(selector) {
+  const value = $(selector).value.trim();
+  return value === '' ? null : Number(value);
+}
+
+async function setView(view) {
+  state.activeView = view;
+  document
+    .querySelectorAll('.admin-view')
+    .forEach((element) => element.classList.add('hidden'));
+  $(`#${view}-view`).classList.remove('hidden');
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.view === view);
+  });
+  $('.sidebar').classList.remove('open');
+  if (view === 'users') {
+    await loadUsers();
+  } else {
+    await loadEvents();
+  }
+}
+
+async function loadUsers({ resetPage = false } = {}) {
+  if (resetPage) state.usersPage = 1;
+  $('#users-loading').textContent = 'Loading users...';
+  $('#users-loading').classList.remove('hidden');
+  $('#users-empty').classList.add('hidden');
+  $('#user-table-wrap').classList.add('hidden');
+  const query = new URLSearchParams({
+    page: String(state.usersPage),
+    limit: '20',
+  });
+  const search = $('#user-search').value.trim();
+  const role = $('#user-role-filter').value;
+  const accountStatus = $('#user-status-filter').value;
+  if (search) query.set('search', search);
+  if (role) query.set('role', role);
+  if (accountStatus) query.set('accountStatus', accountStatus);
+
+  try {
+    const data = await api(`/users/admin-users?${query}`);
+    state.users = data.users || [];
+    state.usersHasMore = data.pagination?.hasMore === true;
+    renderUsers(data);
+  } catch (error) {
+    if (/token|auth|admin/i.test(error.message)) {
+      showLogin(error.message);
+      return;
+    }
+    $('#users-loading').textContent = error.message;
+  }
+}
+
+function renderUsers(data) {
+  const summary = data.summary || {};
+  $('#total-users').textContent = summary.total || 0;
+  $('#active-users').textContent = summary.active || 0;
+  $('#onboarded-users').textContent = summary.onboarded || 0;
+  $('#suspended-users').textContent = summary.suspended || 0;
+  $('#users-loading').classList.add('hidden');
+  $('#users-empty').classList.toggle('hidden', state.users.length > 0);
+  $('#user-table-wrap').classList.toggle('hidden', state.users.length === 0);
+  userTableBody.innerHTML = state.users.map(userRow).join('');
+  $('#users-page-label').textContent =
+    `Page ${state.usersPage} · ${data.pagination?.total || 0} result${data.pagination?.total === 1 ? '' : 's'}`;
+  $('#users-prev').disabled = state.usersPage <= 1;
+  $('#users-next').disabled = !state.usersHasMore;
+}
+
+function userRow(user) {
+  const image = user.photos?.[0]?.url
+    ? `<img src="${escapeHtml(user.photos[0].url)}" alt="">`
+    : `<span class="user-placeholder">${escapeHtml((user.firstName || 'U')[0].toUpperCase())}</span>`;
+  const name = user.firstName || 'Unnamed user';
+  const joined = user.createdAt
+    ? new Date(user.createdAt).toLocaleDateString()
+    : 'Unknown';
+  return `
+    <tr>
+      <td><div class="user-cell">${image}<div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(user.identity || 'Identity not set')}</small></div></div></td>
+      <td>${escapeHtml(`${user.countryCode || ''} ${user.phoneNumber || ''}`.trim())}</td>
+      <td><span class="pill ${escapeHtml(user.accountStatus)}">${escapeHtml(user.accountStatus)}</span>${user.isAdmin ? '<span class="pill admin">Admin</span>' : ''}</td>
+      <td><span class="pill ${user.onboardingComplete ? 'complete' : ''}">${user.onboardingComplete ? 'Complete' : escapeHtml(user.onboardingStep || 'Incomplete')}</span></td>
+      <td>${escapeHtml(joined)}</td>
+      <td><button class="small-button" data-edit-user="${escapeHtml(user.id)}">Edit</button></td>
+    </tr>`;
+}
+
+function openUserModal(user) {
+  state.editingUserId = user.id;
+  $('#user-modal-title').textContent = user.firstName
+    ? `Edit ${user.firstName}`
+    : 'Edit user';
+  $('#user-first-name').value = user.firstName || '';
+  $('#user-identity').value = user.identity || '';
+  $('#user-country-code').value = user.countryCode || '';
+  $('#user-phone-number').value = user.phoneNumber || '';
+  $('#user-role').value = user.role || 'user';
+  $('#user-account-status').value = user.accountStatus || 'active';
+  $('#user-birth-date').value = toDateInput(user.birthDate);
+  $('#user-height').value = user.heightCm ?? '';
+  $('#user-bio').value = user.bio || '';
+  $('#user-education').value = user.educationLevel || '';
+  $('#user-looking-for').value = user.lookingFor || '';
+  $('#user-children').value = user.children || '';
+  $('#user-smoking').value = user.smoking || '';
+  $('#user-interests').value = (user.happiness || []).join(', ');
+  $('#user-location-label').value = user.location?.label || '';
+  $('#user-latitude').value = user.location?.latitude ?? '';
+  $('#user-longitude').value = user.location?.longitude ?? '';
+  $('#user-onboarding-step').value = user.onboardingStep || '';
+  $('#user-phone-verified').checked = user.isPhoneVerified === true;
+  $('#user-onboarding-complete').checked = user.onboardingComplete === true;
+  $('#user-show-star').checked = user.showStarOnProfile !== false;
+  setChecked('#privacy-discoverable', user.privacySettings?.discoverable);
+  setChecked('#privacy-online', user.privacySettings?.showOnlineStatus);
+  setChecked('#privacy-distance', user.privacySettings?.showDistance);
+  setChecked('#privacy-age', user.privacySettings?.showAge);
+  setChecked('#notify-matches', user.notificationSettings?.newMatches);
+  setChecked('#notify-messages', user.notificationSettings?.messages);
+  setChecked('#notify-likes', user.notificationSettings?.likes);
+  setChecked('#notify-calls', user.notificationSettings?.calls);
+  $('#user-form-error').textContent = '';
+
+  const photos = user.photos || [];
+  $('#user-photo-strip').innerHTML = photos.length
+    ? photos
+        .map(
+          (photo) =>
+            `<img src="${escapeHtml(photo.url)}" alt="User profile photo">`,
+        )
+        .join('')
+    : '<div class="user-photo-empty">No profile photos uploaded</div>';
+  const currentUserId = String(state.user?._id || state.user?.id || '');
+  $('#delete-user-button').disabled = currentUserId === user.id;
+  userModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeUserModal() {
+  userModal.classList.add('hidden');
+  state.editingUserId = null;
+  document.body.style.overflow = '';
+}
+
+$('#user-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const userId = state.editingUserId;
+  if (!userId) return;
+  const button = $('#save-user-button');
+  const birthDate = $('#user-birth-date').value;
+  const payload = {
+    firstName: $('#user-first-name').value.trim() || null,
+    identity: $('#user-identity').value || null,
+    countryCode: $('#user-country-code').value.trim(),
+    phoneNumber: $('#user-phone-number').value.trim(),
+    role: $('#user-role').value,
+    accountStatus: $('#user-account-status').value,
+    birthDate: birthDate ? new Date(`${birthDate}T00:00:00`).toISOString() : null,
+    heightCm: optionalNumber('#user-height'),
+    bio: $('#user-bio').value.trim(),
+    educationLevel: $('#user-education').value.trim(),
+    lookingFor: $('#user-looking-for').value.trim(),
+    children: $('#user-children').value.trim(),
+    smoking: $('#user-smoking').value.trim(),
+    happiness: $('#user-interests')
+      .value.split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12),
+    location: {
+      label: $('#user-location-label').value.trim() || null,
+      latitude: optionalNumber('#user-latitude'),
+      longitude: optionalNumber('#user-longitude'),
+    },
+    onboardingStep: $('#user-onboarding-step').value.trim(),
+    isPhoneVerified: $('#user-phone-verified').checked,
+    onboardingComplete: $('#user-onboarding-complete').checked,
+    showStarOnProfile: $('#user-show-star').checked,
+    privacySettings: {
+      discoverable: $('#privacy-discoverable').checked,
+      showOnlineStatus: $('#privacy-online').checked,
+      showDistance: $('#privacy-distance').checked,
+      showAge: $('#privacy-age').checked,
+    },
+    notificationSettings: {
+      newMatches: $('#notify-matches').checked,
+      messages: $('#notify-messages').checked,
+      likes: $('#notify-likes').checked,
+      calls: $('#notify-calls').checked,
+    },
+  };
+  $('#user-form-error').textContent = '';
+  setBusy(button, true, 'Saving...');
+  try {
+    await api(`/users/admin-users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    closeUserModal();
+    await loadUsers();
+    showToast('User updated');
+  } catch (error) {
+    $('#user-form-error').textContent = error.message;
+  } finally {
+    setBusy(button, false, '');
+  }
+});
+
+$('#delete-user-button').addEventListener('click', async () => {
+  const userId = state.editingUserId;
+  const user = state.users.find((item) => item.id === userId);
+  if (!userId || !user) return;
+  const confirmation = window.prompt(
+    `Permanently delete ${user.firstName || user.phoneNumber}? Type DELETE to confirm.`,
+  );
+  if (confirmation !== 'DELETE') return;
+  const button = $('#delete-user-button');
+  setBusy(button, true, 'Deleting...');
+  try {
+    await api(`/users/admin-users/${userId}`, { method: 'DELETE' });
+    closeUserModal();
+    await loadUsers();
+    showToast('User account deleted');
+  } catch (error) {
+    $('#user-form-error').textContent = error.message;
+  } finally {
+    setBusy(button, false, '');
+  }
+});
+
+userTableBody.addEventListener('click', (event) => {
+  const userId = event.target.dataset.editUser;
+  if (!userId) return;
+  const user = state.users.find((item) => item.id === userId);
+  if (user) openUserModal(user);
+});
+
 function openModal(event = null) {
   state.editingId = event?.id || null;
   $('#modal-title').textContent = event ? 'Edit event' : 'Create event';
@@ -299,14 +554,45 @@ $('#create-button').addEventListener('click', () => openModal());
 $('#search-input').addEventListener('input', renderEvents);
 $('#status-filter').addEventListener('change', renderEvents);
 $('#logout-button').addEventListener('click', () => showLogin());
-$('#menu-button').addEventListener('click', () =>
-  $('.sidebar').classList.toggle('open'),
+document.querySelectorAll('[data-view]').forEach((button) => {
+  button.addEventListener('click', () => setView(button.dataset.view));
+});
+document.querySelectorAll('[data-menu-button]').forEach((button) => {
+  button.addEventListener('click', () => $('.sidebar').classList.toggle('open'));
+});
+$('#refresh-users-button').addEventListener('click', () => loadUsers());
+$('#user-role-filter').addEventListener('change', () =>
+  loadUsers({ resetPage: true }),
 );
+$('#user-status-filter').addEventListener('change', () =>
+  loadUsers({ resetPage: true }),
+);
+let userSearchTimer;
+$('#user-search').addEventListener('input', () => {
+  clearTimeout(userSearchTimer);
+  userSearchTimer = setTimeout(() => loadUsers({ resetPage: true }), 300);
+});
+$('#users-prev').addEventListener('click', () => {
+  if (state.usersPage <= 1) return;
+  state.usersPage -= 1;
+  loadUsers();
+});
+$('#users-next').addEventListener('click', () => {
+  if (!state.usersHasMore) return;
+  state.usersPage += 1;
+  loadUsers();
+});
 document
   .querySelectorAll('[data-close-modal]')
   .forEach((button) => button.addEventListener('click', closeModal));
+document
+  .querySelectorAll('[data-close-user-modal]')
+  .forEach((button) => button.addEventListener('click', closeUserModal));
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeModal();
+  if (event.key === 'Escape') {
+    closeModal();
+    closeUserModal();
+  }
 });
 
 if (state.token) {

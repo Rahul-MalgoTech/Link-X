@@ -36,7 +36,10 @@
     <div id="dashboard-view" class="dashboard-view hidden">
       <aside class="sidebar">
         <a class="brand brand-light" href="/admin/">LINKX</a>
-        <nav><button class="nav-item active"><span>&#9638;</span> Events</button></nav>
+        <nav>
+          <button class="nav-item active" data-view="events"><span>&#9638;</span> Events</button>
+          <button class="nav-item" data-view="users"><span>&#9673;</span> Users</button>
+        </nav>
         <div class="sidebar-bottom">
           <div class="admin-chip">
             <span class="avatar">A</span>
@@ -47,38 +50,162 @@
       </aside>
 
       <main class="main">
-        <header class="topbar">
-          <button id="menu-button" class="icon-button menu-button" aria-label="Open menu">☰</button>
-          <div><span class="eyebrow">EVENT OPERATIONS</span><h2>Events</h2></div>
-          <button id="create-button" class="primary-button"><span>+</span> Create event</button>
-        </header>
+        <section id="events-view" class="admin-view">
+          <header class="topbar">
+            <button class="icon-button menu-button" data-menu-button aria-label="Open menu">☰</button>
+            <div><span class="eyebrow">EVENT OPERATIONS</span><h2>Events</h2></div>
+            <button id="create-button" class="primary-button"><span>+</span> Create event</button>
+          </header>
 
-        <section class="stats-grid">
-          <article class="stat-card"><span class="stat-icon amber">&#9670;</span><div><small>Total events</small><strong id="total-events">0</strong></div></article>
-          <article class="stat-card"><span class="stat-icon green">&check;</span><div><small>Published</small><strong id="published-events">0</strong></div></article>
-          <article class="stat-card"><span class="stat-icon violet">&#9675;</span><div><small>Total attendees</small><strong id="total-attendees">0</strong></div></article>
+          <section class="stats-grid">
+            <article class="stat-card"><span class="stat-icon amber">&#9670;</span><div><small>Total events</small><strong id="total-events">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon green">&check;</span><div><small>Published</small><strong id="published-events">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon violet">&#9675;</span><div><small>Total attendees</small><strong id="total-attendees">0</strong></div></article>
+          </section>
+
+          <section class="content-card">
+            <div class="content-heading">
+              <div><h3>All events</h3><p class="muted">Manage published, past, and cancelled events.</p></div>
+              <div class="filters">
+                <input id="search-input" type="search" placeholder="Search events..." />
+                <select id="status-filter">
+                  <option value="all">All statuses</option>
+                  <option value="published">Published</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div id="loading-state" class="state-message">Loading events...</div>
+            <div id="empty-state" class="state-message hidden">
+              <span class="empty-icon">&#9671;</span><h3>No events found</h3>
+              <p>Create your first event or change the active filters.</p>
+            </div>
+            <div id="event-grid" class="event-grid"></div>
+          </section>
         </section>
 
-        <section class="content-card">
-          <div class="content-heading">
-            <div><h3>All events</h3><p class="muted">Manage published, past, and cancelled events.</p></div>
-            <div class="filters">
-              <input id="search-input" type="search" placeholder="Search events..." />
-              <select id="status-filter">
-                <option value="all">All statuses</option>
-                <option value="published">Published</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+        <section id="users-view" class="admin-view hidden">
+          <header class="topbar">
+            <button class="icon-button menu-button" data-menu-button aria-label="Open menu">☰</button>
+            <div><span class="eyebrow">MEMBER OPERATIONS</span><h2>Users</h2></div>
+            <button id="refresh-users-button" class="secondary-button">Refresh</button>
+          </header>
+
+          <section class="stats-grid user-stats">
+            <article class="stat-card"><span class="stat-icon amber">&#9673;</span><div><small>Total users</small><strong id="total-users">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon green">&check;</span><div><small>Active</small><strong id="active-users">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon violet">&#9733;</span><div><small>Onboarded</small><strong id="onboarded-users">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon red">!</span><div><small>Suspended</small><strong id="suspended-users">0</strong></div></article>
+          </section>
+
+          <section class="content-card">
+            <div class="content-heading user-heading">
+              <div><h3>All users</h3><p class="muted">Edit profiles, access, settings, and account status.</p></div>
+              <div class="filters user-filters">
+                <input id="user-search" type="search" placeholder="Search name or phone..." />
+                <select id="user-role-filter">
+                  <option value="">All roles</option>
+                  <option value="user">Users</option>
+                  <option value="admin">Administrators</option>
+                </select>
+                <select id="user-status-filter">
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
             </div>
-          </div>
-          <div id="loading-state" class="state-message">Loading events...</div>
-          <div id="empty-state" class="state-message hidden">
-            <span class="empty-icon">&#9671;</span><h3>No events found</h3>
-            <p>Create your first event or change the active filters.</p>
-          </div>
-          <div id="event-grid" class="event-grid"></div>
+            <div id="users-loading" class="state-message">Loading users...</div>
+            <div id="users-empty" class="state-message hidden">
+              <span class="empty-icon">&#9673;</span><h3>No users found</h3>
+              <p>Change the filters or wait for members to join.</p>
+            </div>
+            <div id="user-table-wrap" class="user-table-wrap hidden">
+              <table class="user-table">
+                <thead><tr><th>User</th><th>Phone</th><th>Access</th><th>Onboarding</th><th>Joined</th><th></th></tr></thead>
+                <tbody id="user-table-body"></tbody>
+              </table>
+              <div class="pagination">
+                <button id="users-prev" class="secondary-button">Previous</button>
+                <span id="users-page-label">Page 1</span>
+                <button id="users-next" class="secondary-button">Next</button>
+              </div>
+            </div>
+          </section>
         </section>
       </main>
+    </div>
+
+    <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close-user-modal></div>
+      <form id="user-form" class="modal-card user-modal-card">
+        <div class="modal-header">
+          <div><span class="eyebrow">USER MANAGEMENT</span><h2 id="user-modal-title">Edit user</h2></div>
+          <button class="icon-button" type="button" data-close-user-modal aria-label="Close">&times;</button>
+        </div>
+        <div id="user-photo-strip" class="user-photo-strip"></div>
+        <div class="form-section">
+          <h3>Account</h3>
+          <div class="form-grid">
+            <label>First name<input id="user-first-name" maxlength="60" /></label>
+            <label>Identity<select id="user-identity"><option value="">Not set</option><option>Him</option><option>Her</option><option>Other</option></select></label>
+            <label>Country code<input id="user-country-code" maxlength="8" /></label>
+            <label>Phone number<input id="user-phone-number" maxlength="20" required /></label>
+            <label>Role<select id="user-role"><option value="user">User</option><option value="admin">Administrator</option></select></label>
+            <label>Status<select id="user-account-status"><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
+            <label>Birth date<input id="user-birth-date" type="date" /></label>
+            <label>Height (cm)<input id="user-height" type="number" min="120" max="240" /></label>
+            <label class="full">Bio<textarea id="user-bio" rows="3" maxlength="500"></textarea></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <h3>Profile and discovery</h3>
+          <div class="form-grid">
+            <label>Education<input id="user-education" maxlength="80" /></label>
+            <label>Looking for<input id="user-looking-for" maxlength="120" /></label>
+            <label>Children<input id="user-children" maxlength="80" /></label>
+            <label>Smoking<input id="user-smoking" maxlength="80" /></label>
+            <label class="full">Interests, comma separated<input id="user-interests" /></label>
+            <label class="full">Location label<input id="user-location-label" maxlength="180" /></label>
+            <label>Latitude<input id="user-latitude" type="number" min="-90" max="90" step="any" /></label>
+            <label>Longitude<input id="user-longitude" type="number" min="-180" max="180" step="any" /></label>
+            <label>Onboarding step<input id="user-onboarding-step" maxlength="80" /></label>
+          </div>
+          <div class="toggle-grid">
+            <label class="check-label"><input id="user-phone-verified" type="checkbox" /> Phone verified</label>
+            <label class="check-label"><input id="user-onboarding-complete" type="checkbox" /> Onboarding complete</label>
+            <label class="check-label"><input id="user-show-star" type="checkbox" /> Show profile star</label>
+          </div>
+        </div>
+        <div class="settings-columns">
+          <div class="form-section">
+            <h3>Privacy</h3>
+            <div class="toggle-list">
+              <label class="check-label"><input id="privacy-discoverable" type="checkbox" /> Discoverable</label>
+              <label class="check-label"><input id="privacy-online" type="checkbox" /> Show online status</label>
+              <label class="check-label"><input id="privacy-distance" type="checkbox" /> Show distance</label>
+              <label class="check-label"><input id="privacy-age" type="checkbox" /> Show age</label>
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>Notifications</h3>
+            <div class="toggle-list">
+              <label class="check-label"><input id="notify-matches" type="checkbox" /> New matches</label>
+              <label class="check-label"><input id="notify-messages" type="checkbox" /> Messages</label>
+              <label class="check-label"><input id="notify-likes" type="checkbox" /> Likes</label>
+              <label class="check-label"><input id="notify-calls" type="checkbox" /> Calls</label>
+            </div>
+          </div>
+        </div>
+        <p id="user-form-error" class="form-error" role="alert"></p>
+        <div class="modal-actions modal-actions-split">
+          <button id="delete-user-button" class="danger-button" type="button">Delete account</button>
+          <div>
+            <button class="secondary-button" type="button" data-close-user-modal>Cancel</button>
+            <button id="save-user-button" class="primary-button" type="submit">Save user</button>
+          </div>
+        </div>
+      </form>
     </div>
 
     <div id="event-modal" class="modal hidden" role="dialog" aria-modal="true">

@@ -23,6 +23,15 @@ test('profile bio cannot exceed 500 characters', () => {
   assert.ok(user.validateSync()?.errors.bio);
 });
 
+test('user account status only allows active or suspended', () => {
+  const user = new User({
+    phoneNumber: '7777777777',
+    accountStatus: 'deleted',
+  });
+
+  assert.ok(user.validateSync()?.errors.accountStatus);
+});
+
 test('support requests require a user, subject, and message', () => {
   const request = new SupportRequest({
     user: new mongoose.Types.ObjectId(),

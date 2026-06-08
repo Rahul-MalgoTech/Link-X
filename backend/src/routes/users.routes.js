@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 
 import { Block } from '../models/block.model.js';
@@ -13,7 +14,7 @@ import { Report } from '../models/report.model.js';
 import { Room } from '../models/room.model.js';
 import { Subscription } from '../models/subscription.model.js';
 import { SupportRequest } from '../models/support-request.model.js';
-import { isAdminUser, requireAuth } from '../middleware/auth.js';
+import { isAdminUser, requireAdmin, requireAuth } from '../middleware/auth.js';
 import { User } from '../models/user.model.js';
 import { deleteCloudinaryAsset } from '../config/cloudinary.js';
 import { asyncRoute } from '../utils/async-route.js';
@@ -58,7 +59,192 @@ const supportSchema = z.object({
   message: z.string().trim().min(10).max(2000),
 });
 
+const nullableText = (maximum) =>
+  z.string().trim().max(maximum).nullable().optional();
+
+const adminUserUpdateSchema = z
+  .object({
+    countryCode: z.string().trim().min(1).max(8).optional(),
+    phoneNumber: z.string().trim().min(5).max(20).optional(),
+    role: z.enum(['user', 'admin']).optional(),
+    accountStatus: z.enum(['active', 'suspended']).optional(),
+    isPhoneVerified: z.boolean().optional(),
+    firstName: nullableText(60),
+    bio: nullableText(500),
+    identity: z.enum(['Him', 'Her', 'Other']).nullable().optional(),
+    birthDate: z.coerce.date().nullable().optional(),
+    showStarOnProfile: z.boolean().optional(),
+    heightCm: z.number().int().min(120).max(240).nullable().optional(),
+    educationLevel: nullableText(80),
+    lookingFor: nullableText(120),
+    happiness: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+    children: nullableText(80),
+    smoking: nullableText(80),
+    location: z
+      .object({
+        label: nullableText(180),
+        latitude: z.number().min(-90).max(90).nullable().optional(),
+        longitude: z.number().min(-180).max(180).nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+    privacySettings: settingsSchema.shape.privacySettings,
+    notificationSettings: settingsSchema.shape.notificationSettings,
+    onboardingStep: z.string().trim().max(80).optional(),
+    onboardingComplete: z.boolean().optional(),
+  })
+  .strict();
+
 router.use(requireAuth);
+
+router.get(
+  '/admin-users',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const page = positiveInteger(req.query.page, 1);
+    const limit = Math.min(positiveInteger(req.query.limit, 20), 100);
+    const search =
+      typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const role = ['user', 'admin'].includes(req.query.role)
+      ? req.query.role
+      : null;
+    const accountStatus = ['active', 'suspended'].includes(
+      req.query.accountStatus,
+    )
+      ? req.query.accountStatus
+      : null;
+    const onboardingComplete =
+      req.query.onboardingComplete === 'true'
+        ? true
+        : req.query.onboardingComplete === 'false'
+          ? false
+          : null;
+    const query = {
+      ...(search
+        ? {
+            $or: [
+              { firstName: { $regex: escapeRegex(search), $options: 'i' } },
+              { phoneNumber: { $regex: escapeRegex(search), $options: 'i' } },
+              { countryCode: { $regex: escapeRegex(search), $options: 'i' } },
+            ],
+          }
+        : {}),
+      ...(role ? { role } : {}),
+      ...(accountStatus ? { accountStatus } : {}),
+      ...(onboardingComplete == null ? {} : { onboardingComplete }),
+    };
+
+    const [users, total, active, suspended, onboarded] = await Promise.all([
+      User.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      User.countDocuments(query),
+      User.countDocuments({ accountStatus: { $ne: 'suspended' } }),
+      User.countDocuments({ accountStatus: 'suspended' }),
+      User.countDocuments({ onboardingComplete: true }),
+    ]);
+
+    res.json({
+      users: users.map(toAdminUser),
+      pagination: { page, limit, total, hasMore: page * limit < total },
+      summary: {
+        total: await User.countDocuments(),
+        active,
+        suspended,
+        onboarded,
+      },
+    });
+  }),
+);
+
+router.get(
+  '/admin-users/:userId',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json({ user: toAdminUser(user) });
+  }),
+);
+
+router.patch(
+  '/admin-users/:userId',
+  requireAdmin,
+  validate(adminUserUpdateSchema),
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const editingSelf = user._id.toString() === req.user._id.toString();
+    if (
+      editingSelf &&
+      (req.body.role === 'user' || req.body.accountStatus === 'suspended')
+    ) {
+      return res.status(409).json({
+        message: 'You cannot demote or suspend your own administrator account',
+      });
+    }
+
+    const { privacySettings, notificationSettings, location, ...fields } =
+      req.body;
+    Object.assign(user, fields);
+    if (privacySettings) {
+      user.privacySettings = {
+        ...(user.privacySettings?.toObject?.() || {}),
+        ...privacySettings,
+      };
+    }
+    if (notificationSettings) {
+      user.notificationSettings = {
+        ...(user.notificationSettings?.toObject?.() || {}),
+        ...notificationSettings,
+      };
+    }
+    if (location === null) {
+      user.location = undefined;
+    } else if (location) {
+      user.location = {
+        ...(user.location?.toObject?.() || {}),
+        ...location,
+      };
+    }
+
+    try {
+      await user.save();
+    } catch (error) {
+      if (error?.code === 11000) {
+        return res.status(409).json({
+          message: 'That phone number is already used by another account',
+        });
+      }
+      throw error;
+    }
+
+    if (user.accountStatus === 'suspended') {
+      req.app.get('io')?.in(`user:${user._id}`).disconnectSockets(true);
+    }
+    res.json({ message: 'User updated', user: toAdminUser(user) });
+  }),
+);
+
+router.delete(
+  '/admin-users/:userId',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    if (req.params.userId === req.user._id.toString()) {
+      return res.status(409).json({
+        message: 'You cannot delete your own administrator account',
+      });
+    }
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    await deleteUserAccount(user, req.app.get('io'));
+    res.json({ message: 'User account deleted' });
+  }),
+);
 
 router.get(
   '/me',
@@ -147,60 +333,7 @@ router.post(
 router.delete(
   '/me',
   asyncRoute(async (req, res) => {
-    const userId = req.user._id;
-    const matchedUsers = await Match.find({ users: userId })
-      .select('users')
-      .lean();
-    const conversations = await Conversation.find({
-      participants: userId,
-    }).select('_id');
-    const conversationIds = conversations.map(({ _id }) => _id);
-    const hostedRooms = await Room.find({ host: userId }).select('_id');
-    const hostedRoomIds = hostedRooms.map(({ _id }) => _id);
-
-    const photoDeletes = req.user.photos
-      .filter((photo) => photo.publicId)
-      .map((photo) =>
-        deleteCloudinaryAsset(photo.publicId).catch((error) => {
-          console.warn(`Unable to delete photo ${photo.publicId}: ${error.message}`);
-        }),
-      );
-    await Promise.all(photoDeletes);
-
-    await Promise.all([
-      Message.deleteMany({ conversation: { $in: conversationIds } }),
-      Conversation.deleteMany({ _id: { $in: conversationIds } }),
-      Match.deleteMany({ users: userId }),
-      Reaction.deleteMany({ $or: [{ actor: userId }, { target: userId }] }),
-      Block.deleteMany({ $or: [{ blocker: userId }, { blocked: userId }] }),
-      Report.deleteMany({ $or: [{ reporter: userId }, { reported: userId }] }),
-      SupportRequest.deleteMany({ user: userId }),
-      Notification.deleteMany({ user: userId }),
-      Payment.deleteMany({ user: userId }),
-      Subscription.deleteMany({ user: userId }),
-      Room.deleteMany({ _id: { $in: hostedRoomIds } }),
-      Room.updateMany(
-        { host: { $ne: userId }, 'members.user': userId },
-        { $pull: { members: { user: userId } } },
-      ),
-      Otp.deleteMany({
-        countryCode: req.user.countryCode,
-        phoneNumber: req.user.phoneNumber,
-      }),
-    ]);
-    await User.deleteOne({ _id: userId });
-
-    const io = req.app.get('io');
-    for (const match of matchedUsers) {
-      for (const otherUserId of match.users) {
-        if (otherUserId.toString() !== userId.toString()) {
-          io?.to(`user:${otherUserId}`).emit('match:removed', {
-            userIds: [userId.toString(), otherUserId.toString()],
-          });
-        }
-      }
-    }
-    io?.in(`user:${userId}`).disconnectSockets(true);
+    await deleteUserAccount(req.user, req.app.get('io'));
     res.json({ message: 'Account deleted' });
   }),
 );
@@ -261,6 +394,7 @@ router.get(
 
     const query = {
       _id: { $nin: [...excludedIds] },
+      accountStatus: { $ne: 'suspended' },
       onboardingComplete: true,
       isPhoneVerified: true,
       'privacySettings.discoverable': { $ne: false },
@@ -376,6 +510,104 @@ function toExploreUser(user, currentUser, relationship) {
       ? 'matched'
       : relationship.reaction || 'none',
   };
+}
+
+function toAdminUser(user) {
+  const value = user.toObject ? user.toObject() : user;
+  return {
+    id: value._id.toString(),
+    countryCode: value.countryCode || '',
+    phoneNumber: value.phoneNumber || '',
+    role: value.role || 'user',
+    isAdmin: isAdminUser(value),
+    accountStatus: value.accountStatus || 'active',
+    isPhoneVerified: value.isPhoneVerified === true,
+    firstName: value.firstName || '',
+    bio: value.bio || '',
+    identity: value.identity || null,
+    birthDate: value.birthDate || null,
+    showStarOnProfile: value.showStarOnProfile !== false,
+    heightCm: value.heightCm ?? null,
+    educationLevel: value.educationLevel || '',
+    lookingFor: value.lookingFor || '',
+    happiness: value.happiness || [],
+    children: value.children || '',
+    smoking: value.smoking || '',
+    location: value.location || {},
+    photos: value.photos || [],
+    privacySettings: value.privacySettings || {},
+    notificationSettings: value.notificationSettings || {},
+    onboardingStep: value.onboardingStep || '',
+    onboardingComplete: value.onboardingComplete === true,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
+}
+
+async function deleteUserAccount(user, io) {
+  const userId = user._id;
+  const matchedUsers = await Match.find({ users: userId })
+    .select('users')
+    .lean();
+  const conversations = await Conversation.find({
+    participants: userId,
+  }).select('_id');
+  const conversationIds = conversations.map(({ _id }) => _id);
+  const hostedRooms = await Room.find({ host: userId }).select('_id');
+  const hostedRoomIds = hostedRooms.map(({ _id }) => _id);
+
+  await Promise.all(
+    user.photos
+      .filter((photo) => photo.publicId)
+      .map((photo) =>
+        deleteCloudinaryAsset(photo.publicId).catch((error) => {
+          console.warn(
+            `Unable to delete photo ${photo.publicId}: ${error.message}`,
+          );
+        }),
+      ),
+  );
+
+  await Promise.all([
+    Message.deleteMany({ conversation: { $in: conversationIds } }),
+    Conversation.deleteMany({ _id: { $in: conversationIds } }),
+    Match.deleteMany({ users: userId }),
+    Reaction.deleteMany({ $or: [{ actor: userId }, { target: userId }] }),
+    Block.deleteMany({ $or: [{ blocker: userId }, { blocked: userId }] }),
+    Report.deleteMany({ $or: [{ reporter: userId }, { reported: userId }] }),
+    SupportRequest.deleteMany({ user: userId }),
+    Notification.deleteMany({ user: userId }),
+    Payment.deleteMany({ user: userId }),
+    Subscription.deleteMany({ user: userId }),
+    Room.deleteMany({ _id: { $in: hostedRoomIds } }),
+    Room.updateMany(
+      { host: { $ne: userId }, 'members.user': userId },
+      { $pull: { members: { user: userId } } },
+    ),
+    Otp.deleteMany({
+      countryCode: user.countryCode,
+      phoneNumber: user.phoneNumber,
+    }),
+  ]);
+  await User.deleteOne({ _id: userId });
+
+  for (const match of matchedUsers) {
+    for (const otherUserId of match.users) {
+      if (otherUserId.toString() !== userId.toString()) {
+        io?.to(`user:${otherUserId}`).emit('match:removed', {
+          userIds: [userId.toString(), otherUserId.toString()],
+        });
+      }
+    }
+  }
+  io?.in(`user:${userId}`).disconnectSockets(true);
+}
+
+function assertUserId(userId) {
+  if (mongoose.isValidObjectId(userId)) return;
+  const error = new Error('Invalid user id');
+  error.status = 400;
+  throw error;
 }
 
 function ageFromBirthDate(birthDate) {
