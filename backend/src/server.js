@@ -81,7 +81,7 @@ app.use((error, _req, res, _next) => {
 
 try {
   await mongoose.connect(mongoUri);
-  console.log(`MongoDB connected: ${mongoUri}`);
+  console.log(`MongoDB connected: ${mongoose.connection.name}`);
 } catch (error) {
   console.error('\nMongoDB connection failed.');
   console.error(`Tried: ${mongoUri}`);
