@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#073f37" />
+    <title>Linkx Admin</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <section id="login-view" class="login-view">
+      <div class="login-art">
+        <a class="brand brand-light" href="/admin/">LINKX</a>
+        <div>
+          <span class="eyebrow eyebrow-light">ADMIN CONSOLE</span>
+          <h1>Bring people together through better events.</h1>
+          <p>Create, publish, and manage every Linkx experience from one place.</p>
+        </div>
+        <span class="login-note">Secure access for Linkx administrators</span>
+      </div>
+      <div class="login-panel">
+        <form id="login-form" class="login-card">
+          <div class="mobile-brand">LINKX</div>
+          <span class="eyebrow">WELCOME BACK</span>
+          <h2>Admin sign in</h2>
+          <p class="muted">Use a phone number listed in <code>ADMIN_PHONE_NUMBERS</code>.</p>
+          <label>Country code<input id="country-code" value="+91" required /></label>
+          <label>Phone number<input id="phone-number" type="tel" placeholder="9876543210" required /></label>
+          <label>OTP<input id="otp" inputmode="numeric" placeholder="123456" required /></label>
+          <button id="login-button" class="primary-button" type="submit">Sign in securely</button>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </form>
+      </div>
+    </section>
+
+    <div id="dashboard-view" class="dashboard-view hidden">
+      <aside class="sidebar">
+        <a class="brand brand-light" href="/admin/">LINKX</a>
+        <nav><button class="nav-item active"><span>&#9638;</span> Events</button></nav>
+        <div class="sidebar-bottom">
+          <div class="admin-chip">
+            <span class="avatar">A</span>
+            <div><strong>Administrator</strong><small id="admin-phone"></small></div>
+          </div>
+          <button id="logout-button" class="nav-item"><span>&rarr;</span> Sign out</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="menu-button" class="icon-button menu-button" aria-label="Open menu">☰</button>
+          <div><span class="eyebrow">EVENT OPERATIONS</span><h2>Events</h2></div>
+          <button id="create-button" class="primary-button"><span>+</span> Create event</button>
+        </header>
+
+        <section class="stats-grid">
+          <article class="stat-card"><span class="stat-icon amber">&#9670;</span><div><small>Total events</small><strong id="total-events">0</strong></div></article>
+          <article class="stat-card"><span class="stat-icon green">&check;</span><div><small>Published</small><strong id="published-events">0</strong></div></article>
+          <article class="stat-card"><span class="stat-icon violet">&#9675;</span><div><small>Total attendees</small><strong id="total-attendees">0</strong></div></article>
+        </section>
+
+        <section class="content-card">
+          <div class="content-heading">
+            <div><h3>All events</h3><p class="muted">Manage published, past, and cancelled events.</p></div>
+            <div class="filters">
+              <input id="search-input" type="search" placeholder="Search events..." />
+              <select id="status-filter">
+                <option value="all">All statuses</option>
+                <option value="published">Published</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          <div id="loading-state" class="state-message">Loading events...</div>
+          <div id="empty-state" class="state-message hidden">
+            <span class="empty-icon">&#9671;</span><h3>No events found</h3>
+            <p>Create your first event or change the active filters.</p>
+          </div>
+          <div id="event-grid" class="event-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="event-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <form id="event-form" class="modal-card">
+        <div class="modal-header">
+          <div><span class="eyebrow">EVENT DETAILS</span><h2 id="modal-title">Create event</h2></div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">&times;</button>
+        </div>
+        <div class="form-grid">
+          <label class="full">Event title<input id="event-title" maxlength="120" required /></label>
+          <label class="full">Description<textarea id="event-description" rows="4" maxlength="2000"></textarea></label>
+          <label class="full">Cover image URL<input id="event-image" type="url" placeholder="https://..." /></label>
+          <label class="full">Venue<input id="event-venue" maxlength="180" placeholder="Venue name or Online" /></label>
+          <label>Starts<input id="event-start" type="datetime-local" required /></label>
+          <label>Ends<input id="event-end" type="datetime-local" /></label>
+          <label>Capacity<input id="event-capacity" type="number" min="1" max="100000" value="100" required /></label>
+          <label>Price (INR)<input id="event-price" type="number" min="0" step="0.01" value="0" required /></label>
+        </div>
+        <p id="event-error" class="form-error" role="alert"></p>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" data-close-modal>Cancel</button>
+          <button id="save-button" class="primary-button" type="submit">Publish event</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/admin/app.js" defer></script>
+  </body>
+</html>

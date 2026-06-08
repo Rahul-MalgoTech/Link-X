@@ -1,0 +1,467 @@
+import express from 'express';
+import { z } from 'zod';
+
+import { Block } from '../models/block.model.js';
+import { Conversation } from '../models/conversation.model.js';
+import { Match } from '../models/match.model.js';
+import { Message } from '../models/message.model.js';
+import { Notification } from '../models/notification.model.js';
+import { Otp } from '../models/otp.model.js';
+import { Payment } from '../models/payment.model.js';
+import { Reaction } from '../models/reaction.model.js';
+import { Report } from '../models/report.model.js';
+import { Room } from '../models/room.model.js';
+import { Subscription } from '../models/subscription.model.js';
+import { SupportRequest } from '../models/support-request.model.js';
+import { isAdminUser, requireAuth } from '../middleware/auth.js';
+import { User } from '../models/user.model.js';
+import { deleteCloudinaryAsset } from '../config/cloudinary.js';
+import { asyncRoute } from '../utils/async-route.js';
+import { validate } from '../utils/validate.js';
+
+const router = express.Router();
+
+const profileSchema = z.object({
+  firstName: z.string().trim().min(1).max(60).optional(),
+  bio: z.string().trim().max(500).optional(),
+  identity: z.enum(['Him', 'Her', 'Other']).optional(),
+  birthDate: z.coerce.date().optional(),
+  heightCm: z.number().int().min(120).max(240).nullable().optional(),
+  educationLevel: z.string().trim().max(80).optional(),
+  lookingFor: z.string().trim().max(120).optional(),
+  happiness: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  children: z.string().trim().max(80).optional(),
+  smoking: z.string().trim().max(80).optional(),
+});
+
+const settingsSchema = z.object({
+  privacySettings: z
+    .object({
+      discoverable: z.boolean().optional(),
+      showOnlineStatus: z.boolean().optional(),
+      showDistance: z.boolean().optional(),
+      showAge: z.boolean().optional(),
+    })
+    .optional(),
+  notificationSettings: z
+    .object({
+      newMatches: z.boolean().optional(),
+      messages: z.boolean().optional(),
+      likes: z.boolean().optional(),
+      calls: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+const supportSchema = z.object({
+  subject: z.string().trim().min(3).max(120),
+  message: z.string().trim().min(10).max(2000),
+});
+
+router.use(requireAuth);
+
+router.get(
+  '/me',
+  asyncRoute(async (req, res) => {
+    res.json({
+      user: {
+        ...req.user.toObject(),
+        isAdmin: isAdminUser(req.user),
+      },
+    });
+  }),
+);
+
+router.patch(
+  '/me',
+  validate(profileSchema),
+  asyncRoute(async (req, res) => {
+    Object.assign(req.user, req.body);
+    await req.user.save();
+    res.json({ message: 'Profile updated', user: req.user });
+  }),
+);
+
+router.patch(
+  '/me/settings',
+  validate(settingsSchema),
+  asyncRoute(async (req, res) => {
+    const hideOnlineStatus =
+      req.body.privacySettings?.showOnlineStatus === false &&
+      req.user.privacySettings?.showOnlineStatus !== false;
+    if (req.body.privacySettings) {
+      req.user.privacySettings = {
+        ...(req.user.privacySettings?.toObject?.() || {}),
+        ...req.body.privacySettings,
+      };
+    }
+    if (req.body.notificationSettings) {
+      req.user.notificationSettings = {
+        ...(req.user.notificationSettings?.toObject?.() || {}),
+        ...req.body.notificationSettings,
+      };
+    }
+    await req.user.save();
+    if (hideOnlineStatus) {
+      const matches = await Match.find({
+        users: req.user._id,
+        status: 'active',
+      })
+        .select('users')
+        .lean();
+      for (const match of matches) {
+        for (const userId of match.users) {
+          if (userId.toString() !== req.user._id.toString()) {
+            req.app.get('io')?.to(`user:${userId}`).emit('chat:presence', {
+              userId: req.user._id.toString(),
+              isOnline: false,
+            });
+          }
+        }
+      }
+    }
+    res.json({
+      message: 'Settings updated',
+      privacySettings: req.user.privacySettings,
+      notificationSettings: req.user.notificationSettings,
+    });
+  }),
+);
+
+router.post(
+  '/me/support',
+  validate(supportSchema),
+  asyncRoute(async (req, res) => {
+    const request = await SupportRequest.create({
+      user: req.user._id,
+      subject: req.body.subject,
+      message: req.body.message,
+    });
+    res.status(201).json({
+      message: 'Support request submitted',
+      requestId: request._id.toString(),
+    });
+  }),
+);
+
+router.delete(
+  '/me',
+  asyncRoute(async (req, res) => {
+    const userId = req.user._id;
+    const matchedUsers = await Match.find({ users: userId })
+      .select('users')
+      .lean();
+    const conversations = await Conversation.find({
+      participants: userId,
+    }).select('_id');
+    const conversationIds = conversations.map(({ _id }) => _id);
+    const hostedRooms = await Room.find({ host: userId }).select('_id');
+    const hostedRoomIds = hostedRooms.map(({ _id }) => _id);
+
+    const photoDeletes = req.user.photos
+      .filter((photo) => photo.publicId)
+      .map((photo) =>
+        deleteCloudinaryAsset(photo.publicId).catch((error) => {
+          console.warn(`Unable to delete photo ${photo.publicId}: ${error.message}`);
+        }),
+      );
+    await Promise.all(photoDeletes);
+
+    await Promise.all([
+      Message.deleteMany({ conversation: { $in: conversationIds } }),
+      Conversation.deleteMany({ _id: { $in: conversationIds } }),
+      Match.deleteMany({ users: userId }),
+      Reaction.deleteMany({ $or: [{ actor: userId }, { target: userId }] }),
+      Block.deleteMany({ $or: [{ blocker: userId }, { blocked: userId }] }),
+      Report.deleteMany({ $or: [{ reporter: userId }, { reported: userId }] }),
+      SupportRequest.deleteMany({ user: userId }),
+      Notification.deleteMany({ user: userId }),
+      Payment.deleteMany({ user: userId }),
+      Subscription.deleteMany({ user: userId }),
+      Room.deleteMany({ _id: { $in: hostedRoomIds } }),
+      Room.updateMany(
+        { host: { $ne: userId }, 'members.user': userId },
+        { $pull: { members: { user: userId } } },
+      ),
+      Otp.deleteMany({
+        countryCode: req.user.countryCode,
+        phoneNumber: req.user.phoneNumber,
+      }),
+    ]);
+    await User.deleteOne({ _id: userId });
+
+    const io = req.app.get('io');
+    for (const match of matchedUsers) {
+      for (const otherUserId of match.users) {
+        if (otherUserId.toString() !== userId.toString()) {
+          io?.to(`user:${otherUserId}`).emit('match:removed', {
+            userIds: [userId.toString(), otherUserId.toString()],
+          });
+        }
+      }
+    }
+    io?.in(`user:${userId}`).disconnectSockets(true);
+    res.json({ message: 'Account deleted' });
+  }),
+);
+
+router.get(
+  '/explore',
+  asyncRoute(async (req, res) => {
+    const page = positiveInteger(req.query.page, 1);
+    const limit = Math.min(positiveInteger(req.query.limit, 20), 50);
+    const minAge = boundedInteger(req.query.minAge, 18, 100, 18);
+    const maxAge = boundedInteger(req.query.maxAge, minAge, 100, 80);
+    const maxDistance = boundedInteger(
+      req.query.maxDistance,
+      1,
+      5000,
+      5000,
+    );
+    const identity = normalizeIdentity(req.query.identity);
+    const search =
+      typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const lookingFor =
+      typeof req.query.lookingFor === 'string'
+        ? req.query.lookingFor.trim()
+        : '';
+    const interests = parseStringList(req.query.interests);
+    const excludeReacted = req.query.excludeReacted === 'true';
+
+    const [blocks, reactions, activeMatches] = await Promise.all([
+      Block.find({
+        $or: [{ blocker: req.user._id }, { blocked: req.user._id }],
+      }).lean(),
+      excludeReacted
+        ? Reaction.find({ actor: req.user._id }).select('target').lean()
+        : [],
+      Match.find({ users: req.user._id, status: 'active' })
+        .select('users')
+        .lean(),
+    ]);
+
+    const excludedIds = new Set([req.user._id.toString()]);
+    for (const block of blocks) {
+      excludedIds.add(
+        block.blocker.toString() === req.user._id.toString()
+          ? block.blocked.toString()
+          : block.blocker.toString(),
+      );
+    }
+    for (const reaction of reactions) excludedIds.add(reaction.target.toString());
+    if (excludeReacted) {
+      for (const match of activeMatches) {
+        for (const userId of match.users) {
+          if (userId.toString() !== req.user._id.toString()) {
+            excludedIds.add(userId.toString());
+          }
+        }
+      }
+    }
+
+    const query = {
+      _id: { $nin: [...excludedIds] },
+      onboardingComplete: true,
+      isPhoneVerified: true,
+      'privacySettings.discoverable': { $ne: false },
+      birthDate: {
+        $lte: yearsAgo(minAge),
+        $gt: yearsAgo(maxAge + 1),
+      },
+      'photos.0.url': { $exists: true, $ne: '' },
+      ...(identity ? { identity } : {}),
+      ...(search
+        ? { firstName: { $regex: escapeRegex(search), $options: 'i' } }
+        : {}),
+      ...(lookingFor
+        ? { lookingFor: { $regex: escapeRegex(lookingFor), $options: 'i' } }
+        : {}),
+      ...(interests.length > 0
+        ? {
+            happiness: {
+              $in: interests.map((interest) => new RegExp(`^${escapeRegex(interest)}$`, 'i')),
+            },
+          }
+        : {}),
+    };
+
+    const candidates = await User.find(query).sort({ updatedAt: -1 }).lean();
+    const filtered = candidates.filter((user) => {
+      const age = ageFromBirthDate(user.birthDate);
+      if (age == null || age < minAge || age > maxAge) return false;
+      const distance = distanceMiles(req.user.location, user.location);
+      if (!hasCoordinates(req.user.location)) return true;
+      return distance != null && distance <= maxDistance;
+    });
+
+    const total = filtered.length;
+    const start = (page - 1) * limit;
+    const pageUsers = filtered.slice(start, start + limit);
+    const pageUserIds = pageUsers.map((user) => user._id);
+    const [pageReactions, pageMatches] = await Promise.all([
+      Reaction.find({
+        actor: req.user._id,
+        target: { $in: pageUserIds },
+      }).lean(),
+      pageUserIds.length === 0
+        ? Promise.resolve([])
+        : Match.find({
+            status: 'active',
+            $and: [
+              { users: req.user._id },
+              { users: { $in: pageUserIds } },
+            ],
+          }).lean(),
+    ]);
+    const reactionByTarget = new Map(
+      pageReactions.map((reaction) => [
+        reaction.target.toString(),
+        reaction.action,
+      ]),
+    );
+    const matchedUserIds = new Set();
+    for (const match of pageMatches) {
+      for (const userId of match.users) {
+        if (userId.toString() !== req.user._id.toString()) {
+          matchedUserIds.add(userId.toString());
+        }
+      }
+    }
+
+    res.json({
+      users: pageUsers.map((user) =>
+        toExploreUser(user, req.user, {
+          reaction: reactionByTarget.get(user._id.toString()) || null,
+          matched: matchedUserIds.has(user._id.toString()),
+        }),
+      ),
+      pagination: {
+        page,
+        limit,
+        total,
+        hasMore: start + pageUsers.length < total,
+      },
+      filters: {
+        identity,
+        minAge,
+        maxAge,
+        maxDistance,
+        search,
+        lookingFor,
+        interests,
+        excludeReacted,
+      },
+    });
+  }),
+);
+
+function toExploreUser(user, currentUser, relationship) {
+  return {
+    id: user._id.toString(),
+    name: user.firstName || 'Linkx User',
+    age:
+      user.privacySettings?.showAge === false
+        ? null
+        : ageFromBirthDate(user.birthDate),
+    imageUrl: user.photos?.[0]?.url || '',
+    location: user.location?.label || 'Nearby',
+    distanceMiles:
+      user.privacySettings?.showDistance === false
+        ? null
+        : distanceMiles(currentUser.location, user.location),
+    lookingFor: user.lookingFor || '',
+    interests: user.happiness || [],
+    identity: user.identity || '',
+    relationshipStatus: relationship.matched
+      ? 'matched'
+      : relationship.reaction || 'none',
+  };
+}
+
+function ageFromBirthDate(birthDate) {
+  if (!birthDate) return null;
+  const date = new Date(birthDate);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const hasBirthdayPassed =
+    now.getMonth() > date.getMonth() ||
+    (now.getMonth() === date.getMonth() && now.getDate() >= date.getDate());
+  if (!hasBirthdayPassed) age -= 1;
+  return age > 0 ? age : null;
+}
+
+function distanceMiles(from, to) {
+  if (!hasCoordinates(from) || !hasCoordinates(to)) return null;
+
+  const earthRadiusMiles = 3958.8;
+  const latitudeDelta = toRadians(to.latitude - from.latitude);
+  const longitudeDelta = toRadians(to.longitude - from.longitude);
+  const fromLatitude = toRadians(from.latitude);
+  const toLatitude = toRadians(to.latitude);
+
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(fromLatitude) *
+      Math.cos(toLatitude) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.max(1, Math.round(earthRadiusMiles * c));
+}
+
+function hasCoordinates(location) {
+  return (
+    location &&
+    typeof location.latitude === 'number' &&
+    Number.isFinite(location.latitude) &&
+    typeof location.longitude === 'number' &&
+    Number.isFinite(location.longitude)
+  );
+}
+
+function normalizeIdentity(value) {
+  if (value === 'Him' || value === 'Her' || value === 'Other') return value;
+  return null;
+}
+
+function parseStringList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => parseStringList(item))
+      .filter((item, index, items) => items.indexOf(item) === index);
+  }
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function boundedInteger(value, minimum, maximum, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(Math.max(parsed, minimum), maximum);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function yearsAgo(years) {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - years);
+  return date;
+}
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+export default router;
