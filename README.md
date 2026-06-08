@@ -21,11 +21,11 @@ incoming connections to port `4001`.
 For an Android emulator, use:
 
 ```bash
-flutter run --dart-define=LINKX_API_BASE_URL=http://10.0.2.2:4001/api
+flutter run --dart-define=LINKX_API_BASE_URL=https://linkx-backend-kzjm.onrender.com/api
 ```
 
-The checked-in development default currently points to
-`http://192.168.1.35:4001/api` for physical-device testing on this WiFi.
+The checked-in default uses the production API at
+`https://linkx-backend-kzjm.onrender.com/api`.
 If your Mac IP changes, run `bash scripts/run_device.sh` or update
 `LINKX_API_BASE_URL`.
 

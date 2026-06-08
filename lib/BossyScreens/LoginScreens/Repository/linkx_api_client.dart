@@ -10,7 +10,7 @@ class LinkxApiClient {
 
   static const String baseUrl = String.fromEnvironment(
     'LINKX_API_BASE_URL',
-    defaultValue: 'http://192.168.1.35:4001/api',
+    defaultValue: 'https://linkx-backend-kzjm.onrender.com/api',
   );
 
   static const tokenKey = 'linkx_auth_token';
