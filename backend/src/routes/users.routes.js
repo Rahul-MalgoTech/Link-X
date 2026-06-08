@@ -1,5 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
+import multer from 'multer';
 import { z } from 'zod';
 
 import { Block } from '../models/block.model.js';
@@ -16,11 +17,19 @@ import { Subscription } from '../models/subscription.model.js';
 import { SupportRequest } from '../models/support-request.model.js';
 import { isAdminUser, requireAdmin, requireAuth } from '../middleware/auth.js';
 import { User } from '../models/user.model.js';
-import { deleteCloudinaryAsset } from '../config/cloudinary.js';
+import {
+  assertCloudinaryConfigured,
+  deleteCloudinaryAsset,
+  uploadBufferToCloudinary,
+} from '../config/cloudinary.js';
 import { asyncRoute } from '../utils/async-route.js';
 import { validate } from '../utils/validate.js';
 
 const router = express.Router();
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024, files: 6 },
+});
 
 const profileSchema = z.object({
   firstName: z.string().trim().min(1).max(60).optional(),
@@ -178,12 +187,15 @@ router.patch(
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
     const editingSelf = user._id.toString() === req.user._id.toString();
+    const proposedUser = { ...user.toObject(), ...req.body };
     if (
       editingSelf &&
-      (req.body.role === 'user' || req.body.accountStatus === 'suspended')
+      (!isAdminUser(proposedUser) ||
+        req.body.accountStatus === 'suspended')
     ) {
       return res.status(409).json({
-        message: 'You cannot demote or suspend your own administrator account',
+        message:
+          'You cannot remove administrator access from or suspend your own account',
       });
     }
 
@@ -226,6 +238,104 @@ router.patch(
       req.app.get('io')?.in(`user:${user._id}`).disconnectSockets(true);
     }
     res.json({ message: 'User updated', user: toAdminUser(user) });
+  }),
+);
+
+router.post(
+  '/admin-users/:userId/photos',
+  requireAdmin,
+  photoUpload.array('photos', 6),
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    assertCloudinaryConfigured();
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const files = req.files || [];
+    if (files.length === 0) {
+      return res.status(400).json({ message: 'Select at least one image' });
+    }
+    const availableSlots = Math.max(0, 6 - user.photos.length);
+    if (availableSlots === 0 || files.length > availableSlots) {
+      return res.status(409).json({
+        message: `This profile can accept ${availableSlots} more photo${availableSlots === 1 ? '' : 's'}`,
+      });
+    }
+
+    const uploadedPhotos = [];
+    try {
+      for (const file of files) {
+        const result = await uploadBufferToCloudinary(file.buffer, {
+          folder: `linkx/profiles/${user._id}`,
+          resource_type: 'image',
+          timeout: 60000,
+          transformation: [
+            { width: 1200, height: 1200, crop: 'limit' },
+            { quality: 'auto', fetch_format: 'auto' },
+          ],
+        });
+        uploadedPhotos.push({
+          url: result.secure_url,
+          publicId: result.public_id,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+        });
+      }
+      user.photos.push(...uploadedPhotos);
+      await user.save();
+    } catch (error) {
+      await Promise.all(
+        uploadedPhotos.map((photo) =>
+          deleteCloudinaryAsset(photo.publicId).catch(() => {}),
+        ),
+      );
+      throw error;
+    }
+
+    res.status(201).json({
+      message: 'Profile photos uploaded',
+      user: toAdminUser(user),
+    });
+  }),
+);
+
+router.patch(
+  '/admin-users/:userId/photos/:photoIndex/primary',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const photoIndex = validPhotoIndex(req.params.photoIndex, user.photos);
+    if (photoIndex > 0) {
+      const photos = [...user.photos];
+      const [primaryPhoto] = photos.splice(photoIndex, 1);
+      photos.unshift(primaryPhoto);
+      user.photos = photos;
+      await user.save();
+    }
+    res.json({ message: 'Primary photo updated', user: toAdminUser(user) });
+  }),
+);
+
+router.delete(
+  '/admin-users/:userId/photos/:photoIndex',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    assertUserId(req.params.userId);
+    const user = await User.findById(req.params.userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const photoIndex = validPhotoIndex(req.params.photoIndex, user.photos);
+    const [removedPhoto] = user.photos.splice(photoIndex, 1);
+    await user.save();
+    if (removedPhoto.publicId) {
+      await deleteCloudinaryAsset(removedPhoto.publicId).catch((error) => {
+        console.warn(
+          `Unable to delete admin-removed photo ${removedPhoto.publicId}: ${error.message}`,
+        );
+      });
+    }
+    res.json({ message: 'Profile photo removed', user: toAdminUser(user) });
   }),
 );
 
@@ -606,6 +716,16 @@ async function deleteUserAccount(user, io) {
 function assertUserId(userId) {
   if (mongoose.isValidObjectId(userId)) return;
   const error = new Error('Invalid user id');
+  error.status = 400;
+  throw error;
+}
+
+function validPhotoIndex(value, photos) {
+  const index = Number.parseInt(value, 10);
+  if (Number.isInteger(index) && index >= 0 && index < photos.length) {
+    return index;
+  }
+  const error = new Error('Invalid profile photo');
   error.status = 400;
   throw error;
 }

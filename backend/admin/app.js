@@ -9,6 +9,7 @@ const state = {
   usersPage: 1,
   usersHasMore: false,
   editingUserId: null,
+  selectedUserPhotos: [],
   activeView: 'events',
 };
 
@@ -31,6 +32,17 @@ async function api(path, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.message || 'Request failed');
+  return data;
+}
+
+async function apiForm(path, formData) {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: 'POST',
+    headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Upload failed');
   return data;
 }
 
@@ -300,6 +312,9 @@ function userRow(user) {
 
 function openUserModal(user) {
   state.editingUserId = user.id;
+  state.selectedUserPhotos = [];
+  $('#user-photo-input').value = '';
+  updatePhotoSelectionLabel(user);
   $('#user-modal-title').textContent = user.firstName
     ? `Edit ${user.firstName}`
     : 'Edit user';
@@ -334,15 +349,7 @@ function openUserModal(user) {
   setChecked('#notify-calls', user.notificationSettings?.calls);
   $('#user-form-error').textContent = '';
 
-  const photos = user.photos || [];
-  $('#user-photo-strip').innerHTML = photos.length
-    ? photos
-        .map(
-          (photo) =>
-            `<img src="${escapeHtml(photo.url)}" alt="User profile photo">`,
-        )
-        .join('')
-    : '<div class="user-photo-empty">No profile photos uploaded</div>';
+  renderUserPhotos(user);
   const currentUserId = String(state.user?._id || state.user?.id || '');
   $('#delete-user-button').disabled = currentUserId === user.id;
   userModal.classList.remove('hidden');
@@ -352,8 +359,114 @@ function openUserModal(user) {
 function closeUserModal() {
   userModal.classList.add('hidden');
   state.editingUserId = null;
+  state.selectedUserPhotos = [];
+  $('#user-photo-input').value = '';
   document.body.style.overflow = '';
 }
+
+function renderUserPhotos(user) {
+  const photos = user.photos || [];
+  $('#user-photo-strip').innerHTML = photos.length
+    ? photos
+        .map(
+          (photo, index) => `
+            <article class="user-photo-card">
+              <img src="${escapeHtml(photo.url)}" alt="User profile photo ${index + 1}">
+              <div class="user-photo-actions">
+                <button type="button" data-primary-photo="${index}" ${index === 0 ? 'disabled' : ''}>
+                  ${index === 0 ? 'Primary' : 'Make primary'}
+                </button>
+                <button class="photo-remove" type="button" data-remove-photo="${index}" aria-label="Remove photo">&times;</button>
+              </div>
+            </article>`,
+        )
+        .join('')
+    : '<div class="user-photo-empty">No profile photos uploaded</div>';
+  updatePhotoSelectionLabel(user);
+}
+
+function updatePhotoSelectionLabel(user) {
+  const currentCount = user?.photos?.length || 0;
+  const selectedCount = state.selectedUserPhotos.length;
+  const available = Math.max(0, 6 - currentCount);
+  $('#photo-selection-label').textContent = selectedCount
+    ? `${selectedCount} photo${selectedCount === 1 ? '' : 's'} selected · ${available} slot${available === 1 ? '' : 's'} available`
+    : `${currentCount}/6 photos · up to 6 MB each`;
+  $('#select-user-photos').disabled = available === 0;
+  $('#upload-user-photos').disabled =
+    selectedCount === 0 || selectedCount > available;
+}
+
+function applyUpdatedUser(user) {
+  state.users = state.users.map((item) => (item.id === user.id ? user : item));
+  userTableBody.innerHTML = state.users.map(userRow).join('');
+  renderUserPhotos(user);
+}
+
+$('#select-user-photos').addEventListener('click', () =>
+  $('#user-photo-input').click(),
+);
+
+$('#user-photo-input').addEventListener('change', (event) => {
+  const user = state.users.find((item) => item.id === state.editingUserId);
+  const available = Math.max(0, 6 - (user?.photos?.length || 0));
+  state.selectedUserPhotos = [...event.target.files].slice(0, available);
+  updatePhotoSelectionLabel(user);
+});
+
+$('#upload-user-photos').addEventListener('click', async () => {
+  const userId = state.editingUserId;
+  if (!userId || state.selectedUserPhotos.length === 0) return;
+  const button = $('#upload-user-photos');
+  const formData = new FormData();
+  state.selectedUserPhotos.forEach((photo) => formData.append('photos', photo));
+  $('#user-form-error').textContent = '';
+  setBusy(button, true, 'Uploading...');
+  try {
+    const data = await apiForm(`/users/admin-users/${userId}/photos`, formData);
+    state.selectedUserPhotos = [];
+    $('#user-photo-input').value = '';
+    applyUpdatedUser(data.user);
+    showToast('Profile photos uploaded');
+  } catch (error) {
+    $('#user-form-error').textContent = error.message;
+  } finally {
+    setBusy(button, false, '');
+    const user = state.users.find((item) => item.id === state.editingUserId);
+    updatePhotoSelectionLabel(user);
+  }
+});
+
+$('#user-photo-strip').addEventListener('click', async (event) => {
+  const primaryIndex = event.target.dataset.primaryPhoto;
+  const removeIndex = event.target.dataset.removePhoto;
+  const userId = state.editingUserId;
+  if (!userId || (primaryIndex == null && removeIndex == null)) return;
+  const button = event.target;
+  const isRemoving = removeIndex != null;
+  if (
+    isRemoving &&
+    !window.confirm('Remove this profile photo permanently?')
+  ) {
+    return;
+  }
+  setBusy(button, true, isRemoving ? '...' : 'Saving...');
+  $('#user-form-error').textContent = '';
+  try {
+    const path = isRemoving
+      ? `/users/admin-users/${userId}/photos/${removeIndex}`
+      : `/users/admin-users/${userId}/photos/${primaryIndex}/primary`;
+    const data = await api(path, {
+      method: isRemoving ? 'DELETE' : 'PATCH',
+    });
+    applyUpdatedUser(data.user);
+    showToast(isRemoving ? 'Profile photo removed' : 'Primary photo updated');
+  } catch (error) {
+    $('#user-form-error').textContent = error.message;
+  } finally {
+    setBusy(button, false, '');
+  }
+});
 
 $('#user-form').addEventListener('submit', async (event) => {
   event.preventDefault();

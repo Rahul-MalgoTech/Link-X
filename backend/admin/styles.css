@@ -126,8 +126,20 @@ input:focus, textarea:focus, select:focus { border-color: var(--green-2); box-sh
 .pagination span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .pagination button { min-height: 38px; }
 .user-modal-card { width: min(860px, 100%); }
-.user-photo-strip { display: flex; gap: 10px; overflow-x: auto; margin: -5px 0 22px; }
-.user-photo-strip img { width: 86px; height: 86px; border-radius: 14px; object-fit: cover; border: 1px solid var(--line); }
+.photo-management-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 5px; }
+.photo-management-heading h3 { margin: 0 0 3px; font-size: 15px; }
+.photo-management-heading p { margin: 0; font-size: 12px; }
+.photo-upload-actions { display: flex; gap: 8px; }
+.photo-upload-actions button { min-height: 40px; padding: 0 14px; }
+.photo-selection-label { color: var(--muted); font-size: 11px; margin: 0 0 12px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.user-photo-strip { display: flex; gap: 12px; overflow-x: auto; margin: 0 0 22px; padding-bottom: 4px; }
+.user-photo-card { flex: 0 0 132px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: white; }
+.user-photo-card img { width: 132px; height: 110px; object-fit: cover; display: block; }
+.user-photo-actions { display: grid; grid-template-columns: 1fr auto; gap: 5px; padding: 7px; }
+.user-photo-actions button { border: 0; border-radius: 7px; padding: 6px; background: #eef2ef; color: var(--ink); font-size: 10px; font-weight: 800; }
+.user-photo-actions button.photo-remove { color: var(--danger); background: #fff0f0; }
+.user-photo-actions button:disabled { color: #147a68; background: #dff3ec; cursor: default; }
 .user-photo-empty { min-height: 70px; width: 100%; border: 1px dashed #cdd5d1; border-radius: 14px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 .form-section { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 6px; }
 .form-section h3 { margin: 0 0 16px; font-size: 15px; }
@@ -167,6 +179,8 @@ label.check-label { display: flex; align-items: center; gap: 9px; border: 1px so
   .user-stats { grid-template-columns: 1fr 1fr; }
   .user-filters { grid-template-columns: 1fr; }
   .settings-columns, .toggle-grid { grid-template-columns: 1fr; }
+  .photo-management-heading { align-items: stretch; display: grid; }
+  .photo-upload-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .modal-actions-split { align-items: stretch; display: grid; }
   .modal-actions-split > div { display: grid; grid-template-columns: 1fr 1fr; }
   .danger-button { width: 100%; }
