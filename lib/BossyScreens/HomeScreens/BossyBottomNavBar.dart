@@ -3,11 +3,15 @@ import 'package:flutter/material.dart';
 class BossyBottomNavBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onTap;
+  final bool showLikesIndicator;
+  final bool showChatIndicator;
 
   const BossyBottomNavBar({
     super.key,
     required this.selectedIndex,
     required this.onTap,
+    this.showLikesIndicator = false,
+    this.showChatIndicator = false,
   });
 
   static const _items = <_BossyNavItem>[
@@ -66,6 +70,9 @@ class BossyBottomNavBar extends StatelessWidget {
                 children: List.generate(_items.length, (index) {
                   final item = _items[index];
                   final selected = selectedIndex == index;
+                  final showIndicator =
+                      (index == 3 && showLikesIndicator) ||
+                      (index == 4 && showChatIndicator);
                   return Expanded(
                     child: Tooltip(
                       message: item.label,
@@ -74,12 +81,37 @@ class BossyBottomNavBar extends StatelessWidget {
                         radius: 28,
                         child: SizedBox(
                           height: navHeight,
-                          child: Icon(
-                            item.icon,
-                            size: index == 2 ? 26 : 24,
-                            color: selected
-                                ? Colors.white
-                                : const Color(0xFFA98CAA),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.none,
+                            children: [
+                              Icon(
+                                item.icon,
+                                size: index == 2 ? 26 : 24,
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFFA98CAA),
+                              ),
+                              if (showIndicator)
+                                Positioned(
+                                  top: 15,
+                                  right: 14,
+                                  child: Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFF315F),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: selected
+                                            ? const Color(0xFFFAAE2B)
+                                            : Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),

@@ -21,6 +21,11 @@ class BossyHomeShell extends StatefulWidget {
 
 class _BossyHomeShellState extends State<BossyHomeShell> {
   int _selectedIndex = 0;
+  bool _hasLikes = false;
+  bool _hasUnreadChats = false;
+  StreamSubscription<LinkxChatMessage>? _messageSubscription;
+  StreamSubscription<void>? _matchSubscription;
+  StreamSubscription<LinkxReadReceipt>? _readReceiptSubscription;
 
   @override
   void initState() {
@@ -28,6 +33,50 @@ class _BossyHomeShellState extends State<BossyHomeShell> {
     LinkxCallService.instance.initializeForSignedInUser().catchError((error) {
       debugPrint('Linkx incoming-call initialization failed: $error');
     });
+    _refreshNavigationIndicators();
+    LinkxChatService.instance.connect().catchError((_) {});
+    _messageSubscription = LinkxChatService.instance.messages.listen((_) {
+      _refreshNavigationIndicators();
+    });
+    _matchSubscription = LinkxChatService.instance.matchChanges.listen((_) {
+      _refreshNavigationIndicators();
+    });
+    _readReceiptSubscription = LinkxChatService.instance.readReceipts.listen(
+      (_) => _refreshNavigationIndicators(),
+    );
+  }
+
+  Future<void> _refreshNavigationIndicators() async {
+    try {
+      final results = await Future.wait<dynamic>([
+        LinkxApiClient().fetchReceivedLikes(limit: 1),
+        LinkxChatService.instance.fetchConversations(),
+      ]);
+      if (!mounted) return;
+      final likes = results[0] as LinkxLikesPage;
+      final conversations = results[1] as List<LinkxConversation>;
+      setState(() {
+        _hasLikes = likes.total > 0;
+        _hasUnreadChats = conversations.any(
+          (conversation) => conversation.unreadCount > 0,
+        );
+      });
+    } catch (_) {}
+  }
+
+  void _selectPage(int index) {
+    setState(() => _selectedIndex = index);
+    if (index == 3 || index == 4) {
+      _refreshNavigationIndicators();
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageSubscription?.cancel();
+    _matchSubscription?.cancel();
+    _readReceiptSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -44,7 +93,9 @@ class _BossyHomeShellState extends State<BossyHomeShell> {
             bottom: 0,
             child: BossyBottomNavBar(
               selectedIndex: _selectedIndex,
-              onTap: (index) => setState(() => _selectedIndex = index),
+              showLikesIndicator: _hasLikes,
+              showChatIndicator: _hasUnreadChats,
+              onTap: _selectPage,
             ),
           ),
         ],
@@ -6293,19 +6344,28 @@ class _RoomHeader extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(31, 28, 30, 0),
+        padding: const EdgeInsets.fromLTRB(18, 18, 20, 0),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(
-                Icons.chevron_left_rounded,
-                size: 24,
-                color: Colors.black,
+            Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => Navigator.of(context).pop(),
+                child: const SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                    color: Color(0xFF15302B),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: 2),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -6313,48 +6373,39 @@ class _RoomHeader extends StatelessWidget {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Colors.black,
-                      fontFamily: 'Inter',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.45,
+                      color: Color(0xFF171717),
+                      fontFamily: 'Bricolage Grotesque',
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      height: 1.05,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 5),
                   Text(
                     subtitle,
                     style: const TextStyle(
-                      color: Color(0x7D000000),
-                      fontFamily: 'Inter',
-                      fontSize: 8,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: -0.45,
+                      color: Color(0xFF817C79),
+                      fontFamily: 'Bricolage Grotesque',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
             action ??
-                Stack(
-                  children: [
-                    const Icon(
-                      Icons.notifications_none_rounded,
-                      size: 24,
-                      color: Color(0xFF00473E),
-                    ),
-                    Positioned(
-                      right: 5,
-                      top: 4,
-                      child: Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFFAAE2B),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ],
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    size: 24,
+                    color: Color(0xFF00473E),
+                  ),
                 ),
           ],
         ),
@@ -6406,10 +6457,11 @@ class _PublicRoomPageState extends State<_PublicRoomPage> {
       body: Column(
         children: [
           _RoomHeader(
-            title: 'Public room',
-            subtitle: 'Live conversations open to everyone',
-            action: IconButton(
-              onPressed: () async {
+            title: 'Public rooms',
+            subtitle: 'Drop into live conversations and meet your crowd',
+            action: _RoomHeaderAction(
+              icon: Icons.add_rounded,
+              onTap: () async {
                 final room = await Navigator.of(context).push<LinkxRoom>(
                   MaterialPageRoute(
                     builder: (_) =>
@@ -6422,10 +6474,9 @@ class _PublicRoomPageState extends State<_PublicRoomPage> {
                   await _openRoomLobby(context, room);
                 }
               },
-              icon: const Icon(Icons.add_circle_outline_rounded),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 22),
           Expanded(
             child: FutureBuilder<LinkxRoomPage>(
               future: _roomsFuture,
@@ -6469,19 +6520,13 @@ class _PublicRoomPageState extends State<_PublicRoomPage> {
                 return RefreshIndicator(
                   color: const Color(0xFFFAAE2B),
                   onRefresh: _refresh,
-                  child: GridView.builder(
+                  child: ListView.separated(
                     physics: const AlwaysScrollableScrollPhysics(
                       parent: BouncingScrollPhysics(),
                     ),
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                          childAspectRatio: 0.82,
-                        ),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 36),
                     itemCount: rooms.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 14),
                     itemBuilder: (context, index) {
                       return _PublicRoomCard(
                         room: rooms[index],
@@ -6509,68 +6554,150 @@ class _PublicRoomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(24),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0x0F000000)),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D00473E),
+                blurRadius: 22,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
             children: [
-              Row(
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const _LiveBadge(),
-                  const Spacer(),
-                  _ViewerBadge(count: room.participantCount),
-                ],
-              ),
-              const Spacer(),
-              _RoomAvatar(
-                imageUrl: room.host.imageUrl,
-                name: room.host.name,
-                size: 58,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                room.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Bricolage Grotesque',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                room.topic.isEmpty ? 'Hosted by ${room.host.name}' : room.topic,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF71717B),
-                  fontSize: 11,
-                  height: 1.3,
-                ),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  const Icon(Icons.mic_rounded, size: 14),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      '${room.participantCount}/${room.maxParticipants}',
-                      style: const TextStyle(fontSize: 11),
-                    ),
+                  _RoomAvatar(
+                    imageUrl: room.host.imageUrl,
+                    name: room.host.name,
+                    size: 72,
                   ),
-                  const Icon(Icons.arrow_forward_rounded, size: 18),
+                  const Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: _RoomLivePulse(),
+                  ),
                 ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const _LiveBadge(),
+                        const SizedBox(width: 8),
+                        _ViewerBadge(count: room.participantCount),
+                      ],
+                    ),
+                    const SizedBox(height: 11),
+                    Text(
+                      room.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF171717),
+                        fontFamily: 'Bricolage Grotesque',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      room.topic.isEmpty
+                          ? 'Hosted by ${room.host.name}'
+                          : room.topic,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF716D69),
+                        fontFamily: 'Bricolage Grotesque',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${room.participantCount} of ${room.maxParticipants} joined',
+                      style: const TextStyle(
+                        color: Color(0xFF00473E),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFAAE2B),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Colors.white,
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RoomHeaderAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _RoomHeaderAction({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFAAE2B),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(icon, color: Colors.white, size: 24),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomLivePulse extends StatelessWidget {
+  const _RoomLivePulse();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: const Color(0xFF20D56B),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: const Icon(Icons.mic_rounded, size: 10, color: Colors.white),
     );
   }
 }
@@ -6581,21 +6708,21 @@ class _LiveBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 13,
-      width: 31,
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         color: const Color(0xFFF54047),
-        borderRadius: BorderRadius.circular(6.5),
+        borderRadius: BorderRadius.circular(12),
       ),
       alignment: Alignment.center,
       child: const Text(
-        'live',
+        'LIVE',
         style: TextStyle(
           color: Colors.white,
           fontFamily: 'Inter',
-          fontSize: 8,
-          fontWeight: FontWeight.w500,
-          letterSpacing: -0.45,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
         ),
       ),
     );
@@ -6610,25 +6737,28 @@ class _ViewerBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFFF0F4F2),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.groups_2_outlined, size: 12, color: Colors.white),
+          const Icon(
+            Icons.groups_2_outlined,
+            size: 14,
+            color: Color(0xFF00473E),
+          ),
           const SizedBox(width: 4),
           Text(
             '$count',
             style: const TextStyle(
-              color: Colors.white,
+              color: Color(0xFF00473E),
               fontFamily: 'Inter',
-              fontSize: 7,
-              fontWeight: FontWeight.w500,
-              letterSpacing: -0.45,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -6690,140 +6820,282 @@ class _PrivateRoomPageState extends State<_PrivateRoomPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF8F5F6),
-      body: Column(
-        children: [
-          _RoomHeader(
-            title: 'private room',
-            subtitle: 'join a private room using the invite code',
-            action: IconButton(
-              onPressed: () async {
-                final room = await Navigator.of(context).push<LinkxRoom>(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const _CreateRoomPage(initialPrivacy: 'private'),
-                  ),
-                );
-                if (room != null && context.mounted) {
-                  await _openRoomLobby(context, room);
-                }
-              },
-              icon: const Icon(Icons.add_circle_outline_rounded),
-            ),
-          ),
-          const SizedBox(height: 120),
-          Container(
-            width: 38,
-            height: 38,
-            decoration: const BoxDecoration(
-              color: Color(0xFFFCE7C7),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.lock_outline_rounded,
-              color: Color(0xFFF29006),
-              size: 21,
-            ),
-          ),
-          const SizedBox(height: 26),
-          const Text(
-            'enter invite code',
-            style: TextStyle(
-              color: Colors.black,
-              fontFamily: 'Inter',
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              letterSpacing: -0.45,
-            ),
-          ),
-          const SizedBox(height: 25),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 38),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(6, (index) {
-                return SizedBox(
-                  width: index == 3 ? 43 : 44,
-                  height: 50,
-                  child: TextField(
-                    controller: _controllers[index],
-                    focusNode: _nodes[index],
-                    textAlign: TextAlign.center,
-                    maxLength: 1,
-                    textCapitalization: TextCapitalization.characters,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: _RoomHeader(
+              title: 'Private rooms',
+              subtitle: 'Join safely with a six-character invite code',
+              action: _RoomHeaderAction(
+                icon: Icons.add_rounded,
+                onTap: () async {
+                  final room = await Navigator.of(context).push<LinkxRoom>(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const _CreateRoomPage(initialPrivacy: 'private'),
                     ),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      contentPadding: EdgeInsets.zero,
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0x59000000)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFFF29006)),
-                      ),
-                    ),
-                    onChanged: (value) {
-                      if (value.isNotEmpty && index < 5) {
-                        _nodes[index + 1].requestFocus();
-                      }
-                      if (value.isEmpty && index > 0) {
-                        _nodes[index - 1].requestFocus();
-                      }
-                    },
-                  ),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 31,
-            child: FilledButton(
-              onPressed: _joining ? null : _joinRoom,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFCE7C7),
-                foregroundColor: const Color(0xFFF29006),
-                padding: const EdgeInsets.symmetric(horizontal: 29),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: Text(
-                _joining ? 'joining...' : 'join room',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.45,
-                ),
+                  );
+                  if (room != null && context.mounted) {
+                    await _openRoomLobby(context, room);
+                  }
+                },
               ),
             ),
           ),
-          const SizedBox(height: 18),
-          TextButton.icon(
-            onPressed: () async {
-              final room = await Navigator.of(context).push<LinkxRoom>(
-                MaterialPageRoute(
-                  builder: (_) =>
-                      const _CreateRoomPage(initialPrivacy: 'private'),
-                ),
-              );
-              if (room != null && context.mounted) {
-                await _openRoomLobby(context, room);
-              }
-            },
-            icon: const Icon(Icons.lock_person_outlined),
-            label: const Text('Create a private room'),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(22, 26, 22, 24),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF073F37), Color(0xFF0D685A)],
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x2900473E),
+                          blurRadius: 30,
+                          offset: Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.14),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_rounded,
+                            color: Color(0xFFFAAE2B),
+                            size: 30,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Enter your invite code',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontFamily: 'Bricolage Grotesque',
+                            fontSize: 25,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Private rooms stay hidden from discovery. Ask the host for the code and join instantly.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFFBFD8D2),
+                            fontFamily: 'Bricolage Grotesque',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 26),
+                        Row(
+                          children: List.generate(6, (index) {
+                            return Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  right: index == 5 ? 0 : 8,
+                                ),
+                                child: SizedBox(
+                                  height: 58,
+                                  child: TextField(
+                                    controller: _controllers[index],
+                                    focusNode: _nodes[index],
+                                    textAlign: TextAlign.center,
+                                    maxLength: 1,
+                                    textCapitalization:
+                                        TextCapitalization.characters,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp('[a-zA-Z0-9]'),
+                                      ),
+                                    ],
+                                    style: const TextStyle(
+                                      color: Color(0xFF15302B),
+                                      fontFamily: 'Inter',
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    decoration: InputDecoration(
+                                      counterText: '',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: EdgeInsets.zero,
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFFFAAE2B),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                    onChanged: (value) {
+                                      final normalized = value.toUpperCase();
+                                      if (value != normalized) {
+                                        _controllers[index]
+                                          ..text = normalized
+                                          ..selection = TextSelection.collapsed(
+                                            offset: normalized.length,
+                                          );
+                                      }
+                                      if (normalized.isNotEmpty && index < 5) {
+                                        _nodes[index + 1].requestFocus();
+                                      }
+                                      if (normalized.isEmpty && index > 0) {
+                                        _nodes[index - 1].requestFocus();
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 22),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: FilledButton.icon(
+                            onPressed: _joining ? null : _joinRoom,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFAAE2B),
+                              foregroundColor: const Color(0xFF15302B),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            icon: _joining
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF15302B),
+                                    ),
+                                  )
+                                : const Icon(Icons.login_rounded),
+                            label: Text(
+                              _joining ? 'Joining room...' : 'Join room',
+                              style: const TextStyle(
+                                fontFamily: 'Bricolage Grotesque',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: () async {
+                        final room = await Navigator.of(context)
+                            .push<LinkxRoom>(
+                              MaterialPageRoute(
+                                builder: (_) => const _CreateRoomPage(
+                                  initialPrivacy: 'private',
+                                ),
+                              ),
+                            );
+                        if (room != null && context.mounted) {
+                          await _openRoomLobby(context, room);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: const Color(0x0F000000)),
+                        ),
+                        child: const Row(
+                          children: [
+                            _PrivateRoomCreateIcon(),
+                            SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Host your own private room',
+                                    style: TextStyle(
+                                      color: Color(0xFF171717),
+                                      fontFamily: 'Bricolage Grotesque',
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Create an invite-only audio or video space.',
+                                    style: TextStyle(
+                                      color: Color(0xFF817C79),
+                                      fontFamily: 'Bricolage Grotesque',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Color(0xFF00473E),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PrivateRoomCreateIcon extends StatelessWidget {
+  const _PrivateRoomCreateIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFF1DB),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.lock_person_rounded, color: Color(0xFFFAAE2B)),
     );
   }
 }
@@ -6895,13 +7167,35 @@ class _CreateRoomPageState extends State<_CreateRoomPage> {
     return _AccountPageShell(
       title: 'Create room',
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
         children: [
+          const Text(
+            'Start a live space',
+            style: TextStyle(
+              color: Color(0xFF171717),
+              fontFamily: 'Bricolage Grotesque',
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Choose who can join, set the vibe, and invite people into an audio or video room.',
+            style: TextStyle(
+              color: Color(0xFF817C79),
+              fontFamily: 'Bricolage Grotesque',
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 22),
           Container(
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0x0F000000)),
             ),
             child: SegmentedButton<String>(
               segments: const [
@@ -6922,7 +7216,7 @@ class _CreateRoomPageState extends State<_CreateRoomPage> {
               },
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           _AccountTextField(controller: _title, label: 'Room title'),
           _AccountTextField(
             controller: _topic,
@@ -6933,7 +7227,11 @@ class _CreateRoomPageState extends State<_CreateRoomPage> {
           const SizedBox(height: 8),
           Text(
             'Capacity: ${_capacity.round()} people',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontFamily: 'Bricolage Grotesque',
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           Slider(
             value: _capacity,
@@ -6944,30 +7242,60 @@ class _CreateRoomPageState extends State<_CreateRoomPage> {
             onChanged: (value) => setState(() => _capacity = value),
           ),
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(17),
             decoration: BoxDecoration(
               color: _privacy == 'private'
                   ? const Color(0xFFFFF1DB)
                   : const Color(0xFFE9F8EF),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(18),
             ),
-            child: Text(
-              _privacy == 'private'
-                  ? 'A private invite code will be created. Only people with the code can join.'
-                  : 'Your room appears in public discovery and anyone can join until it is full.',
-              style: const TextStyle(fontSize: 12, height: 1.45),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  _privacy == 'private'
+                      ? Icons.lock_rounded
+                      : Icons.public_rounded,
+                  color: const Color(0xFF00473E),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _privacy == 'private'
+                        ? 'A private invite code will be created. Only people with the code can join.'
+                        : 'Your room appears in public discovery and anyone can join until it is full.',
+                    style: const TextStyle(
+                      color: Color(0xFF3F4A46),
+                      fontFamily: 'Bricolage Grotesque',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 26),
           FilledButton.icon(
             onPressed: _creating ? null : _create,
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFAAE2B),
               foregroundColor: const Color(0xFF00473E),
-              minimumSize: const Size.fromHeight(52),
+              minimumSize: const Size.fromHeight(56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
             ),
             icon: const Icon(Icons.video_call_rounded),
-            label: Text(_creating ? 'Creating...' : 'Create media room'),
+            label: Text(
+              _creating ? 'Creating...' : 'Create media room',
+              style: const TextStyle(
+                fontFamily: 'Bricolage Grotesque',
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
         ],
       ),
