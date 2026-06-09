@@ -473,6 +473,7 @@ class _ExplorePage extends StatefulWidget {
 class _ExplorePageState extends State<_ExplorePage> {
   final TextEditingController _searchController = TextEditingController();
   late Future<LinkxExplorePage> _profilesFuture;
+  late Future<LinkxApprovedHostPage> _hostsFuture;
   String? _identity;
   int _minAge = 18;
   int _maxAge = 80;
@@ -483,6 +484,7 @@ class _ExplorePageState extends State<_ExplorePage> {
   void initState() {
     super.initState();
     _profilesFuture = _loadProfiles();
+    _hostsFuture = _loadHosts();
   }
 
   @override
@@ -503,12 +505,18 @@ class _ExplorePageState extends State<_ExplorePage> {
     );
   }
 
+  Future<LinkxApprovedHostPage> _loadHosts() {
+    return LinkxApiClient().fetchApprovedHosts(limit: 12);
+  }
+
   Future<void> _refreshProfiles() async {
     final nextProfiles = _loadProfiles();
+    final nextHosts = _loadHosts();
     setState(() {
       _profilesFuture = nextProfiles;
+      _hostsFuture = nextHosts;
     });
-    await _profilesFuture;
+    await Future.wait([_profilesFuture, _hostsFuture]);
   }
 
   Future<void> _applySearch() async {
@@ -654,6 +662,17 @@ class _ExplorePageState extends State<_ExplorePage> {
                         ),
                         const SizedBox(height: 20),
                         const _ExploreSectionHeader(
+                          icon: Icons.workspace_premium_outlined,
+                          title: 'Approved hosts',
+                          action: 'Staff',
+                        ),
+                        const SizedBox(height: 12),
+                        _ApprovedHostsStrip(
+                          future: _hostsFuture,
+                          onRefresh: _refreshProfiles,
+                        ),
+                        const SizedBox(height: 22),
+                        const _ExploreSectionHeader(
                           icon: Icons.local_fire_department_outlined,
                           title: 'Profiles from Linkx',
                           action: 'Live',
@@ -717,6 +736,229 @@ class _ExplorePageState extends State<_ExplorePage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ApprovedHostsStrip extends StatelessWidget {
+  final Future<LinkxApprovedHostPage> future;
+  final Future<void> Function() onRefresh;
+
+  const _ApprovedHostsStrip({required this.future, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<LinkxApprovedHostPage>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 186,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: 3,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, __) => const _ApprovedHostSkeleton(),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return _ExploreMessageState(
+            icon: Icons.workspace_premium_outlined,
+            title: 'Unable to load hosts',
+            message: snapshot.error.toString(),
+            buttonText: 'Retry',
+            onTap: onRefresh,
+          );
+        }
+        final hosts = snapshot.data?.hosts ?? const <LinkxApprovedHost>[];
+        if (hosts.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE7E2E4)),
+            ),
+            child: const Text(
+              'Approved Linkx hosts will appear here after admin approval.',
+              style: TextStyle(
+                color: Color(0xFF777370),
+                fontFamily: 'Inter',
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          height: 212,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: hosts.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemBuilder: (context, index) =>
+                _ApprovedHostCard(host: hosts[index]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ApprovedHostCard extends StatelessWidget {
+  final LinkxApprovedHost host;
+
+  const _ApprovedHostCard({required this.host});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = host.avatarUrl.isNotEmpty
+        ? host.avatarUrl
+        : host.media?.url ?? '';
+    final chips = [...host.topics.take(2), ...host.languages.take(1)];
+    return Container(
+      width: 236,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 116,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageUrl.isNotEmpty)
+                  Image.network(imageUrl, fit: BoxFit.cover)
+                else
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFFFE3A5), Color(0xFFDCEFE9)],
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'APPROVED HOST',
+                      style: TextStyle(
+                        color: Color(0xFF00473E),
+                        fontFamily: 'Inter',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.7,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  host.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1F1D1C),
+                    fontFamily: 'Bricolage Grotesque',
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  host.bio.isEmpty ? 'Premium room and event host' : host.bio,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF777370),
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final chip in chips)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF4DE),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          chip,
+                          style: const TextStyle(
+                            color: Color(0xFF9B6807),
+                            fontFamily: 'Inter',
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ApprovedHostSkeleton extends StatelessWidget {
+  const _ApprovedHostSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 236,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFFAAE2B),
+          strokeWidth: 2,
+        ),
       ),
     );
   }
@@ -3591,7 +3833,7 @@ class _UserProfilePageState extends State<_UserProfilePage> {
                   onTap: () => _showAction('Gift voucher selected'),
                 ),
                 const SizedBox(height: 16),
-                _HostCard(onTap: () => _showAction('Host tools coming soon')),
+                _HostCard(onTap: () => _openPage(_BecomeHostPage(user: user))),
                 const SizedBox(height: 16),
                 _SettingsCard(onTap: (label) => _openSetting(label, user)),
                 const SizedBox(height: 16),
@@ -3627,6 +3869,538 @@ class _AccountPageShell extends StatelessWidget {
         ),
       ),
       body: SafeArea(child: child),
+    );
+  }
+}
+
+class _BecomeHostPage extends StatefulWidget {
+  final LinkxCurrentUser user;
+
+  const _BecomeHostPage({required this.user});
+
+  @override
+  State<_BecomeHostPage> createState() => _BecomeHostPageState();
+}
+
+class _BecomeHostPageState extends State<_BecomeHostPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _picker = ImagePicker();
+  late final TextEditingController _name;
+  late final TextEditingController _bio;
+  late final TextEditingController _topics;
+  late final TextEditingController _languages;
+  late final TextEditingController _experience;
+  late Future<LinkxHostApplicationStatus> _statusFuture;
+  XFile? _media;
+  String _mediaKind = '';
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.user.name);
+    _bio = TextEditingController(text: widget.user.bio);
+    _topics = TextEditingController(
+      text: widget.user.interests.take(4).join(', '),
+    );
+    _languages = TextEditingController(text: 'English');
+    _experience = TextEditingController();
+    _statusFuture = LinkxApiClient().fetchHostApplicationStatus();
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _bio.dispose();
+    _topics.dispose();
+    _languages.dispose();
+    _experience.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickSelfie() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 82,
+    );
+    if (file != null && mounted) {
+      setState(() {
+        _media = file;
+        _mediaKind = 'Selfie photo';
+      });
+    }
+  }
+
+  Future<void> _pickIntroVideo() async {
+    final file = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 2),
+    );
+    if (file != null && mounted) {
+      setState(() {
+        _media = file;
+        _mediaKind = 'Intro video';
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await LinkxApiClient().submitHostApplication(
+        displayName: _name.text.trim(),
+        bio: _bio.text.trim(),
+        topics: _parseList(_topics.text),
+        languages: _parseList(_languages.text),
+        experience: _experience.text.trim(),
+        media: _media,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Host application sent for admin approval'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      setState(() {
+        _statusFuture = LinkxApiClient().fetchHostApplicationStatus();
+        _media = null;
+        _mediaKind = '';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  List<String> _parseList(String value) {
+    return value
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .take(12)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _AccountPageShell(
+      title: 'Become a host',
+      child: FutureBuilder<LinkxHostApplicationStatus>(
+        future: _statusFuture,
+        builder: (context, snapshot) {
+          final status = snapshot.data;
+          final pending = status?.status == 'pending';
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 34),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _HostHeroCard(status: status),
+                const SizedBox(height: 18),
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _HostFormField(
+                        controller: _name,
+                        label: 'Host name',
+                        hint: 'Example: Rahul Talks',
+                        validator: (value) => value.trim().length < 2
+                            ? 'Enter your host name'
+                            : null,
+                      ),
+                      _HostFormField(
+                        controller: _bio,
+                        label: 'Bio',
+                        hint:
+                            'Tell members what kind of conversations you host.',
+                        minLines: 4,
+                        maxLines: 6,
+                        validator: (value) => value.trim().length < 20
+                            ? 'Bio must be at least 20 characters'
+                            : null,
+                      ),
+                      _HostFormField(
+                        controller: _topics,
+                        label: 'Topics',
+                        hint: 'Music, cooking, dating, food, travel',
+                        validator: (value) => _parseList(value).isEmpty
+                            ? 'Add at least one topic'
+                            : null,
+                      ),
+                      _HostFormField(
+                        controller: _languages,
+                        label: 'Languages',
+                        hint: 'English, Tamil, Hindi',
+                        validator: (value) => _parseList(value).isEmpty
+                            ? 'Add at least one language'
+                            : null,
+                      ),
+                      _HostFormField(
+                        controller: _experience,
+                        label: 'Experience',
+                        hint:
+                            'Share past hosting, speaking, teaching, or community experience.',
+                        minLines: 4,
+                        maxLines: 6,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Sample intro or selfie',
+                        style: TextStyle(
+                          color: Color(0xFF1F1D1C),
+                          fontFamily: 'Bricolage Grotesque',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _HostMediaPickerCard(
+                        media: _media,
+                        mediaKind: _mediaKind,
+                        onPickSelfie: _pickSelfie,
+                        onPickVideo: _pickIntroVideo,
+                        onClear: () => setState(() {
+                          _media = null;
+                          _mediaKind = '';
+                        }),
+                      ),
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: FilledButton(
+                          onPressed: pending || _submitting ? null : _submit,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFAAE2B),
+                            disabledBackgroundColor: const Color(0xFFE7E2E4),
+                            foregroundColor: const Color(0xFF00473E),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          child: _submitting
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFF00473E),
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  pending
+                                      ? 'Waiting for admin approval'
+                                      : 'Send application',
+                                  style: const TextStyle(
+                                    fontFamily: 'Bricolage Grotesque',
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HostHeroCard extends StatelessWidget {
+  final LinkxHostApplicationStatus? status;
+
+  const _HostHeroCard({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = status?.status ?? 'not_applied';
+    final title = switch (state) {
+      'approved' => 'You are an approved Linkx host',
+      'pending' => 'Application under review',
+      'rejected' => 'Application needs changes',
+      _ => 'Apply to become a Linkx host',
+    };
+    final message = switch (state) {
+      'approved' => 'Your profile can now appear in Explore as approved staff.',
+      'pending' => 'Admin will review your profile, topics, and sample media.',
+      'rejected' =>
+        status?.application?.adminNote.isNotEmpty == true
+            ? status!.application!.adminNote
+            : 'Update your details and apply again.',
+      _ =>
+        'Tell us what you host. Add a selfie or short intro video if you want a stronger application.',
+    };
+    final icon = switch (state) {
+      'approved' => Icons.verified_rounded,
+      'pending' => Icons.hourglass_top_rounded,
+      'rejected' => Icons.error_outline_rounded,
+      _ => Icons.mic_external_on_rounded,
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF07483F), Color(0xFF0B6B5D)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00473E).withValues(alpha: 0.18),
+            blurRadius: 28,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: const Color(0xFFFAAE2B), size: 28),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontFamily: 'Bricolage Grotesque',
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: Color(0xFFDCEFE9),
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostFormField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final int minLines;
+  final int maxLines;
+  final String? Function(String value)? validator;
+
+  const _HostFormField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    this.minLines = 1,
+    this.maxLines = 1,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF1F1D1C),
+              fontFamily: 'Bricolage Grotesque',
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: controller,
+            minLines: minLines,
+            maxLines: maxLines,
+            validator: (value) => validator?.call(value ?? ''),
+            decoration: InputDecoration(
+              hintText: hint,
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 16,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: Color(0xFFE7E2E4)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: Color(0xFFE7E2E4)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(
+                  color: Color(0xFFFAAE2B),
+                  width: 1.4,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostMediaPickerCard extends StatelessWidget {
+  final XFile? media;
+  final String mediaKind;
+  final VoidCallback onPickSelfie;
+  final VoidCallback onPickVideo;
+  final VoidCallback onClear;
+
+  const _HostMediaPickerCard({
+    required this.media,
+    required this.mediaKind,
+    required this.onPickSelfie,
+    required this.onPickVideo,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE7E2E4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (media == null) ...[
+            const Text(
+              'Optional, but recommended. A short intro helps admin approve faster.',
+              style: TextStyle(
+                color: Color(0xFF777370),
+                fontFamily: 'Inter',
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onPickSelfie,
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    label: const Text('Selfie'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onPickVideo,
+                    icon: const Icon(Icons.video_library_outlined),
+                    label: const Text('Video'),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF4DE),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    mediaKind.contains('video')
+                        ? Icons.play_circle_outline_rounded
+                        : Icons.photo_camera_outlined,
+                    color: const Color(0xFFFAAE2B),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        mediaKind,
+                        style: const TextStyle(
+                          fontFamily: 'Bricolage Grotesque',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        media!.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF777370),
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

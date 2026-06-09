@@ -239,6 +239,61 @@ class LinkxApiClient {
     await clearAuthToken();
   }
 
+  Future<LinkxHostApplicationStatus> fetchHostApplicationStatus() async {
+    final data = await _get('/hosts/me');
+    return LinkxHostApplicationStatus.fromJson(data);
+  }
+
+  Future<LinkxHostApplicationStatus> submitHostApplication({
+    required String displayName,
+    required String bio,
+    required List<String> topics,
+    required List<String> languages,
+    required String experience,
+    XFile? media,
+  }) async {
+    final data = await _submitHostApplication(
+      displayName: displayName,
+      bio: bio,
+      topics: topics,
+      languages: languages,
+      experience: experience,
+      media: media,
+    );
+    return LinkxHostApplicationStatus.fromJson(data);
+  }
+
+  Future<LinkxApprovedHostPage> fetchApprovedHosts({
+    int page = 1,
+    int limit = 12,
+  }) async {
+    final data = await _get(
+      '/hosts/approved',
+      queryParameters: {'page': '$page', 'limit': '$limit'},
+    );
+    final hosts = data['hosts'];
+    final pagination = data['pagination'];
+    return LinkxApprovedHostPage(
+      hosts: hosts is List
+          ? hosts
+                .whereType<Map>()
+                .map(
+                  (host) => LinkxApprovedHost.fromJson(
+                    Map<String, dynamic>.from(host),
+                  ),
+                )
+                .toList()
+          : const [],
+      page: pagination is Map
+          ? (pagination['page'] as num?)?.toInt() ?? page
+          : page,
+      total: pagination is Map
+          ? (pagination['total'] as num?)?.toInt() ?? 0
+          : 0,
+      hasMore: pagination is Map && pagination['hasMore'] == true,
+    );
+  }
+
   Future<LinkxRoomPage> fetchRooms({
     String? privacy,
     int page = 1,
@@ -431,6 +486,50 @@ class LinkxApiClient {
     final body = await response.stream.bytesToString();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw LinkxApiException(_messageFromBody(body));
+    }
+  }
+
+  Future<Map<String, dynamic>> _submitHostApplication({
+    required String displayName,
+    required String bio,
+    required List<String> topics,
+    required List<String> languages,
+    required String experience,
+    XFile? media,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/hosts/apply'),
+    );
+    final token = await _token;
+    if (token != null) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    request.fields.addAll({
+      'displayName': displayName,
+      'bio': bio,
+      'topics': topics.join(','),
+      'languages': languages.join(','),
+      'experience': experience,
+    });
+    if (media != null) {
+      request.files.add(await http.MultipartFile.fromPath('media', media.path));
+    }
+
+    try {
+      final response = await request.send().timeout(
+        const Duration(seconds: 35),
+      );
+      final body = await response.stream.bytesToString();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw LinkxApiException(_messageFromBody(body));
+      }
+      return _jsonMap(body);
+    } catch (error) {
+      if (error is LinkxApiException) rethrow;
+      throw const LinkxApiException(
+        'Backend is not reachable. Please start the Linkx backend.',
+      );
     }
   }
 
@@ -689,6 +788,187 @@ class LinkxExploreUser {
           const [],
       identity: json['identity'] as String? ?? '',
       relationshipStatus: json['relationshipStatus'] as String? ?? 'none',
+    );
+  }
+}
+
+class LinkxHostApplicationStatus {
+  final LinkxHostApplication? application;
+  final LinkxHostProfile hostProfile;
+
+  const LinkxHostApplicationStatus({
+    required this.application,
+    required this.hostProfile,
+  });
+
+  String get status {
+    if (hostProfile.approved) return 'approved';
+    return application?.status ?? 'not_applied';
+  }
+
+  factory LinkxHostApplicationStatus.fromJson(Map<String, dynamic> json) {
+    final application = json['application'];
+    final hostProfile = json['hostProfile'];
+    return LinkxHostApplicationStatus(
+      application: application is Map
+          ? LinkxHostApplication.fromJson(
+              Map<String, dynamic>.from(application),
+            )
+          : null,
+      hostProfile: hostProfile is Map
+          ? LinkxHostProfile.fromJson(Map<String, dynamic>.from(hostProfile))
+          : const LinkxHostProfile(approved: false),
+    );
+  }
+}
+
+class LinkxHostApplication {
+  final String id;
+  final String displayName;
+  final String bio;
+  final List<String> topics;
+  final List<String> languages;
+  final String experience;
+  final LinkxHostMedia? media;
+  final String status;
+  final String adminNote;
+  final DateTime? createdAt;
+
+  const LinkxHostApplication({
+    required this.id,
+    required this.displayName,
+    required this.bio,
+    required this.topics,
+    required this.languages,
+    required this.experience,
+    required this.media,
+    required this.status,
+    required this.adminNote,
+    required this.createdAt,
+  });
+
+  factory LinkxHostApplication.fromJson(Map<String, dynamic> json) {
+    return LinkxHostApplication(
+      id: json['id'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      bio: json['bio'] as String? ?? '',
+      topics:
+          (json['topics'] as List?)?.whereType<String>().toList() ?? const [],
+      languages:
+          (json['languages'] as List?)?.whereType<String>().toList() ??
+          const [],
+      experience: json['experience'] as String? ?? '',
+      media: json['media'] is Map
+          ? LinkxHostMedia.fromJson(Map<String, dynamic>.from(json['media']))
+          : null,
+      status: json['status'] as String? ?? 'pending',
+      adminNote: json['adminNote'] as String? ?? '',
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+    );
+  }
+}
+
+class LinkxHostProfile {
+  final bool approved;
+  final String displayName;
+  final String bio;
+  final List<String> topics;
+  final List<String> languages;
+  final String experience;
+  final LinkxHostMedia? media;
+
+  const LinkxHostProfile({
+    required this.approved,
+    this.displayName = '',
+    this.bio = '',
+    this.topics = const [],
+    this.languages = const [],
+    this.experience = '',
+    this.media,
+  });
+
+  factory LinkxHostProfile.fromJson(Map<String, dynamic> json) {
+    return LinkxHostProfile(
+      approved: json['approved'] == true,
+      displayName: json['displayName'] as String? ?? '',
+      bio: json['bio'] as String? ?? '',
+      topics:
+          (json['topics'] as List?)?.whereType<String>().toList() ?? const [],
+      languages:
+          (json['languages'] as List?)?.whereType<String>().toList() ??
+          const [],
+      experience: json['experience'] as String? ?? '',
+      media: json['media'] is Map
+          ? LinkxHostMedia.fromJson(Map<String, dynamic>.from(json['media']))
+          : null,
+    );
+  }
+}
+
+class LinkxHostMedia {
+  final String url;
+  final String resourceType;
+
+  const LinkxHostMedia({required this.url, required this.resourceType});
+
+  factory LinkxHostMedia.fromJson(Map<String, dynamic> json) {
+    return LinkxHostMedia(
+      url: json['url'] as String? ?? '',
+      resourceType: json['resourceType'] as String? ?? 'image',
+    );
+  }
+}
+
+class LinkxApprovedHostPage {
+  final List<LinkxApprovedHost> hosts;
+  final int page;
+  final int total;
+  final bool hasMore;
+
+  const LinkxApprovedHostPage({
+    required this.hosts,
+    required this.page,
+    required this.total,
+    required this.hasMore,
+  });
+}
+
+class LinkxApprovedHost {
+  final String id;
+  final String displayName;
+  final String bio;
+  final List<String> topics;
+  final List<String> languages;
+  final String experience;
+  final String avatarUrl;
+  final LinkxHostMedia? media;
+
+  const LinkxApprovedHost({
+    required this.id,
+    required this.displayName,
+    required this.bio,
+    required this.topics,
+    required this.languages,
+    required this.experience,
+    required this.avatarUrl,
+    required this.media,
+  });
+
+  factory LinkxApprovedHost.fromJson(Map<String, dynamic> json) {
+    return LinkxApprovedHost(
+      id: json['id'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? 'Linkx Host',
+      bio: json['bio'] as String? ?? '',
+      topics:
+          (json['topics'] as List?)?.whereType<String>().toList() ?? const [],
+      languages:
+          (json['languages'] as List?)?.whereType<String>().toList() ??
+          const [],
+      experience: json['experience'] as String? ?? '',
+      avatarUrl: json['avatarUrl'] as String? ?? '',
+      media: json['media'] is Map
+          ? LinkxHostMedia.fromJson(Map<String, dynamic>.from(json['media']))
+          : null,
     );
   }
 }

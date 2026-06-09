@@ -44,10 +44,7 @@ const hostApplicationSchema = new mongoose.Schema(
       maxlength: 1200,
       default: '',
     },
-    media: {
-      type: hostApplicationMediaSchema,
-      required: true,
-    },
+    media: hostApplicationMediaSchema,
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],

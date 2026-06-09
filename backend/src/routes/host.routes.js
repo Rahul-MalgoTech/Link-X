@@ -74,47 +74,50 @@ router.post(
     }
 
     const file = req.file;
-    if (!file) {
-      return res.status(400).json({
-        message: 'Upload a selfie photo or short intro video.',
-      });
-    }
-    const isImage = file.mimetype.startsWith('image/');
-    const isVideo = file.mimetype.startsWith('video/');
-    if (!isImage && !isVideo) {
-      return res.status(400).json({
-        message: 'Host media must be an image or video.',
-      });
-    }
+    let uploaded = null;
+    let resourceType = null;
+    if (file) {
+      const isImage = file.mimetype.startsWith('image/');
+      const isVideo = file.mimetype.startsWith('video/');
+      if (!isImage && !isVideo) {
+        return res.status(400).json({
+          message: 'Host media must be an image or video.',
+        });
+      }
 
-    const resourceType = isVideo ? 'video' : 'image';
-    const uploaded = await uploadBufferToCloudinary(file.buffer, {
-      folder: `linkx/hosts/${req.user._id}`,
-      resource_type: resourceType,
-      timeout: 90000,
-      ...(isImage
-        ? {
-            transformation: [
-              { width: 1400, height: 1400, crop: 'limit' },
-              { quality: 'auto', fetch_format: 'auto' },
-            ],
-          }
-        : {}),
-    });
+      resourceType = isVideo ? 'video' : 'image';
+      uploaded = await uploadBufferToCloudinary(file.buffer, {
+        folder: `linkx/hosts/${req.user._id}`,
+        resource_type: resourceType,
+        timeout: 90000,
+        ...(isImage
+          ? {
+              transformation: [
+                { width: 1400, height: 1400, crop: 'limit' },
+                { quality: 'auto', fetch_format: 'auto' },
+              ],
+            }
+          : {}),
+      });
+    }
 
     try {
       const application = await HostApplication.create({
         user: req.user._id,
         ...parsed.data,
         status: 'pending',
-        media: {
-          url: uploaded.secure_url,
-          publicId: uploaded.public_id,
-          resourceType,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-        },
+        ...(uploaded
+          ? {
+              media: {
+                url: uploaded.secure_url,
+                publicId: uploaded.public_id,
+                resourceType,
+                originalName: file.originalname,
+                mimeType: file.mimetype,
+                size: file.size,
+              },
+            }
+          : {}),
       });
       res.status(201).json({
         message: 'Host application submitted',
@@ -122,9 +125,11 @@ router.post(
         hostProfile: serializeHostProfile(req.user),
       });
     } catch (error) {
-      await deleteCloudinaryAsset(uploaded.public_id, resourceType).catch(
-        () => {},
-      );
+      if (uploaded) {
+        await deleteCloudinaryAsset(uploaded.public_id, resourceType).catch(
+          () => {},
+        );
+      }
       throw error;
     }
   }),
