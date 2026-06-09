@@ -46,7 +46,7 @@ router.get(
     const conversations = await Conversation.find({
       participants: req.user._id,
     })
-      .populate('participants', 'firstName photos')
+      .populate('participants', 'firstName photos hostProfile.approved')
       .lean();
 
     const latestMessages = await Message.aggregate([
@@ -89,7 +89,12 @@ router.get(
         const otherUser = conversation.participants.find(
           (participant) => participant._id.toString() !== req.user._id.toString(),
         );
-        if (!otherUser || !matchedUsers.has(otherUser._id.toString())) {
+        if (
+          !otherUser ||
+          (!matchedUsers.has(otherUser._id.toString()) &&
+            otherUser.hostProfile?.approved !== true &&
+            req.user.hostProfile?.approved !== true)
+        ) {
           return null;
         }
         const latestMessage = latestMessageByConversation.get(

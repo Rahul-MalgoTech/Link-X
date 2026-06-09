@@ -60,10 +60,17 @@ export async function assertActiveMatch(firstUserId, secondUserId) {
   }
 
   const match = await findActiveMatch(firstUserId, secondUserId);
-  if (!match) {
+  if (match) return match;
+
+  const hostContact = await User.exists({
+    _id: { $in: [firstUserId, secondUserId] },
+    accountStatus: { $ne: 'suspended' },
+    'hostProfile.approved': true,
+  });
+  if (!hostContact) {
     throw matchingError('You can only contact matched users', 403);
   }
-  return match;
+  return { hostContact: true };
 }
 
 export function matchingError(message, status) {

@@ -794,7 +794,7 @@ class _ApprovedHostsStrip extends StatelessWidget {
           );
         }
         return SizedBox(
-          height: 212,
+          height: 302,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -820,127 +820,604 @@ class _ApprovedHostCard extends StatelessWidget {
         ? host.avatarUrl
         : host.media?.url ?? '';
     final chips = [...host.topics.take(2), ...host.languages.take(1)];
-    return Container(
-      width: 236,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(26),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 116,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (imageUrl.isNotEmpty)
-                  Image.network(imageUrl, fit: BoxFit.cover)
-                else
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFFFFE3A5), Color(0xFFDCEFE9)],
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  left: 12,
-                  top: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'APPROVED HOST',
-                      style: TextStyle(
-                        color: Color(0xFF00473E),
-                        fontFamily: 'Inter',
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.7,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => _ApprovedHostDetailPage(host: host),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  host.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF1F1D1C),
-                    fontFamily: 'Bricolage Grotesque',
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  host.bio.isEmpty ? 'Premium room and event host' : host.bio,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF777370),
-                    fontFamily: 'Inter',
-                    fontSize: 12,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
+        ),
+        child: Container(
+          width: 236,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 24,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 114,
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    for (final chip in chips)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
+                    if (imageUrl.isNotEmpty)
+                      Image.network(imageUrl, fit: BoxFit.cover)
+                    else
+                      const DecoratedBox(
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF4DE),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          chip,
-                          style: const TextStyle(
-                            color: Color(0xFF9B6807),
-                            fontFamily: 'Inter',
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
+                          gradient: LinearGradient(
+                            colors: [Color(0xFFFFE3A5), Color(0xFFDCEFE9)],
                           ),
                         ),
                       ),
+                    Positioned(
+                      left: 12,
+                      top: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'APPROVED HOST',
+                          style: TextStyle(
+                            color: Color(0xFF00473E),
+                            fontFamily: 'Inter',
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.7,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ],
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        host.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF1F1D1C),
+                          fontFamily: 'Bricolage Grotesque',
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        host.bio.isEmpty
+                            ? 'Premium room and event host'
+                            : host.bio,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF777370),
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 28,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final chip in chips) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFF4DE),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    chip,
+                                    style: const TextStyle(
+                                      color: Color(0xFF9B6807),
+                                      fontFamily: 'Inter',
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      _ApprovedHostQuickActions(host: host),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApprovedHostQuickActions extends StatelessWidget {
+  final LinkxApprovedHost host;
+
+  const _ApprovedHostQuickActions({required this.host});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _TinyHostAction(
+          icon: Icons.call_rounded,
+          color: const Color(0xFF00473E),
+          onTap: () => _startApprovedHostCall(context, host, video: false),
+        ),
+        const SizedBox(width: 8),
+        _TinyHostAction(
+          icon: Icons.videocam_rounded,
+          color: const Color(0xFFFAAE2B),
+          onTap: () => _startApprovedHostCall(context, host, video: true),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: SizedBox(
+            height: 34,
+            child: FilledButton.icon(
+              onPressed: () => _openApprovedHostChat(context, host),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF3F7A),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              icon: const Icon(Icons.chat_bubble_rounded, size: 14),
+              label: const Text(
+                'Chat',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TinyHostAction extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _TinyHostAction({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Icon(icon, color: Colors.white, size: 16),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApprovedHostDetailPage extends StatelessWidget {
+  final LinkxApprovedHost host;
+
+  const _ApprovedHostDetailPage({required this.host});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = _approvedHostImageUrl(host);
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAF7F8),
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _CircularIconButton(
+                          icon: Icons.arrow_back_ios_new_rounded,
+                          onTap: () => Navigator.maybePop(context),
+                        ),
+                        const Spacer(),
+                        Container(
+                          height: 34,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFFECECEC)),
+                          ),
+                          child: const Text(
+                            'Approved host',
+                            style: TextStyle(
+                              color: Color(0xFF00473E),
+                              fontFamily: 'Bricolage Grotesque',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 24,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(28),
+                            ),
+                            child: imageUrl.isEmpty
+                                ? const SizedBox(
+                                    height: 360,
+                                    width: double.infinity,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Color(0xFFFFE3A5),
+                                            Color(0xFFDCEFE9),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Image.network(
+                                    imageUrl,
+                                    width: double.infinity,
+                                    height: 360,
+                                    fit: BoxFit.cover,
+                                    alignment: Alignment.topCenter,
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        host.displayName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontFamily: 'Bricolage Grotesque',
+                                          fontSize: 30,
+                                          fontWeight: FontWeight.w800,
+                                          height: 1.1,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 30,
+                                      height: 30,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF20D56B),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.check_rounded,
+                                        color: Colors.white,
+                                        size: 19,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.workspace_premium_outlined,
+                                      size: 20,
+                                      color: Color(0xFF679C95),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Verified Linkx host and staff profile',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Color(0xFF777370),
+                                          fontFamily: 'Bricolage Grotesque',
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ContactActionButton(
+                            label: 'Call',
+                            icon: Icons.call_rounded,
+                            color: const Color(0xFF00473E),
+                            onTap: () => _startApprovedHostCall(
+                              context,
+                              host,
+                              video: false,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ContactActionButton(
+                            label: 'Video',
+                            icon: Icons.videocam_rounded,
+                            color: const Color(0xFFFAAE2B),
+                            onTap: () => _startApprovedHostCall(
+                              context,
+                              host,
+                              video: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ContactActionButton(
+                            label: 'Chat',
+                            icon: Icons.chat_bubble_rounded,
+                            color: const Color(0xFFFF3F7A),
+                            onTap: () => _openApprovedHostChat(context, host),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    _ApprovedHostInfo(host: host),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ApprovedHostInfo extends StatelessWidget {
+  final LinkxApprovedHost host;
+
+  const _ApprovedHostInfo({required this.host});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFEDE7EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'About this host',
+            style: TextStyle(
+              color: Color(0xFF1F1D1C),
+              fontFamily: 'Bricolage Grotesque',
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            host.bio.isEmpty ? 'Premium room and event host.' : host.bio,
+            style: const TextStyle(
+              color: Color(0xFF777370),
+              fontFamily: 'Inter',
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
+          if (host.topics.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _ApprovedHostChipSection(title: 'Topics', values: host.topics),
+          ],
+          if (host.languages.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _ApprovedHostChipSection(
+              title: 'Languages',
+              values: host.languages,
+            ),
+          ],
+          if (host.experience.trim().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Experience',
+              style: TextStyle(
+                color: Color(0xFF1F1D1C),
+                fontFamily: 'Bricolage Grotesque',
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              host.experience,
+              style: const TextStyle(
+                color: Color(0xFF777370),
+                fontFamily: 'Inter',
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+class _ApprovedHostChipSection extends StatelessWidget {
+  final String title;
+  final List<String> values;
+
+  const _ApprovedHostChipSection({required this.title, required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Color(0xFF1F1D1C),
+            fontFamily: 'Bricolage Grotesque',
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final value in values)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4DE),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF9B6807),
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+void _openApprovedHostChat(BuildContext context, LinkxApprovedHost host) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => _ChatDetailPage(
+        chat: _ChatData(
+          _approvedHostImageUrl(host),
+          host.displayName,
+          'Chat with this approved Linkx host.',
+          'now',
+          userId: host.id,
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _startApprovedHostCall(
+  BuildContext context,
+  LinkxApprovedHost host, {
+  required bool video,
+}) async {
+  final result = await LinkxCallService.instance.startCall(
+    targetUserId: host.id,
+    targetUserName: host.displayName,
+    isVideoCall: video,
+  );
+  if (!context.mounted || result.success) return;
+  _showProfileAction(context, result.message ?? 'Unable to start call.');
+}
+
+String _approvedHostImageUrl(LinkxApprovedHost host) {
+  return host.avatarUrl.isNotEmpty ? host.avatarUrl : host.media?.url ?? '';
 }
 
 class _ApprovedHostSkeleton extends StatelessWidget {
