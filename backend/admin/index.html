@@ -38,6 +38,7 @@
         <a class="brand brand-light" href="/admin/">LINKX</a>
         <nav>
           <button class="nav-item active" data-view="events"><span>&#9638;</span> Events</button>
+          <button class="nav-item" data-view="hosts"><span>&#9734;</span> Host Requests</button>
           <button class="nav-item" data-view="users"><span>&#9673;</span> Users</button>
         </nav>
         <div class="sidebar-bottom">
@@ -131,6 +132,40 @@
                 <button id="users-next" class="secondary-button">Next</button>
               </div>
             </div>
+          </section>
+        </section>
+
+        <section id="hosts-view" class="admin-view hidden">
+          <header class="topbar">
+            <button class="icon-button menu-button" data-menu-button aria-label="Open menu">☰</button>
+            <div><span class="eyebrow">HOST OPERATIONS</span><h2>Host requests</h2></div>
+            <button id="refresh-hosts-button" class="secondary-button">Refresh</button>
+          </header>
+
+          <section class="stats-grid">
+            <article class="stat-card"><span class="stat-icon amber">&#8987;</span><div><small>Pending</small><strong id="pending-hosts">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon green">&check;</span><div><small>Approved</small><strong id="approved-hosts">0</strong></div></article>
+            <article class="stat-card"><span class="stat-icon red">&times;</span><div><small>Rejected</small><strong id="rejected-hosts">0</strong></div></article>
+          </section>
+
+          <section class="content-card">
+            <div class="content-heading">
+              <div><h3>Applications</h3><p class="muted">Review selfie/video intros and approve trusted Linkx hosts.</p></div>
+              <div class="filters">
+                <select id="host-status-filter">
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="">All statuses</option>
+                </select>
+              </div>
+            </div>
+            <div id="hosts-loading" class="state-message">Loading host requests...</div>
+            <div id="hosts-empty" class="state-message hidden">
+              <span class="empty-icon">&#9734;</span><h3>No host requests</h3>
+              <p>Applications submitted from the app will appear here.</p>
+            </div>
+            <div id="host-request-grid" class="host-request-grid"></div>
           </section>
         </section>
       </main>

@@ -34,11 +34,11 @@ export function uploadBufferToCloudinary(buffer, options) {
   });
 }
 
-export function deleteCloudinaryAsset(publicId) {
+export function deleteCloudinaryAsset(publicId, resourceType = 'image') {
   if (!publicId) return Promise.resolve();
   assertCloudinaryConfigured();
   return cloudinary.uploader.destroy(publicId, {
-    resource_type: 'image',
+    resource_type: resourceType,
     invalidate: true,
   });
 }

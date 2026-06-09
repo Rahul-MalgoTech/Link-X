@@ -10,6 +10,7 @@ const state = {
   usersHasMore: false,
   editingUserId: null,
   selectedUserPhotos: [],
+  hostApplications: [],
   activeView: 'events',
 };
 
@@ -239,8 +240,117 @@ async function setView(view) {
   $('.sidebar').classList.remove('open');
   if (view === 'users') {
     await loadUsers();
+  } else if (view === 'hosts') {
+    await loadHostApplications();
   } else {
     await loadEvents();
+  }
+}
+
+async function loadHostApplications() {
+  $('#hosts-loading').textContent = 'Loading host requests...';
+  $('#hosts-loading').classList.remove('hidden');
+  $('#hosts-empty').classList.add('hidden');
+  $('#host-request-grid').innerHTML = '';
+  const status = $('#host-status-filter').value;
+  const query = new URLSearchParams({ limit: '80' });
+  if (status) query.set('status', status);
+
+  try {
+    const data = await api(`/hosts/admin/applications?${query}`);
+    state.hostApplications = data.applications || [];
+    renderHostApplications(data);
+  } catch (error) {
+    if (/token|auth|admin/i.test(error.message)) {
+      showLogin(error.message);
+      return;
+    }
+    $('#hosts-loading').textContent = error.message;
+  }
+}
+
+function renderHostApplications(data = {}) {
+  const summary = data.summary || {};
+  $('#pending-hosts').textContent = summary.pending || 0;
+  $('#approved-hosts').textContent = summary.approved || 0;
+  $('#rejected-hosts').textContent = summary.rejected || 0;
+  $('#hosts-loading').classList.add('hidden');
+  $('#hosts-empty').classList.toggle(
+    'hidden',
+    state.hostApplications.length > 0,
+  );
+  $('#host-request-grid').innerHTML = state.hostApplications
+    .map(hostApplicationCard)
+    .join('');
+}
+
+function hostApplicationCard(application) {
+  const applicant = application.user || {};
+  const media = application.media || {};
+  const mediaPreview =
+    media.resourceType === 'video'
+      ? `<video src="${escapeHtml(media.url)}" controls playsinline></video>`
+      : media.url
+        ? `<img src="${escapeHtml(media.url)}" alt="">`
+        : '<div class="host-media-empty">No media</div>';
+  const avatar = applicant.avatarUrl
+    ? `<img src="${escapeHtml(applicant.avatarUrl)}" alt="">`
+    : `<span>${escapeHtml((applicant.name || 'H')[0].toUpperCase())}</span>`;
+  const canReview = application.status === 'pending';
+  return `
+    <article class="host-request-card">
+      <div class="host-request-media">
+        ${mediaPreview}
+        <span class="status-badge ${escapeHtml(application.status)}">${escapeHtml(application.status)}</span>
+      </div>
+      <div class="host-request-body">
+        <div class="host-applicant">
+          <div class="host-avatar">${avatar}</div>
+          <div>
+            <strong>${escapeHtml(application.displayName)}</strong>
+            <small>${escapeHtml(applicant.name || 'Linkx user')} · ${escapeHtml(`${applicant.countryCode || ''} ${applicant.phoneNumber || ''}`.trim())}</small>
+          </div>
+        </div>
+        <p>${escapeHtml(application.bio)}</p>
+        <div class="host-chip-row">
+          ${(application.topics || []).map((topic) => `<span>${escapeHtml(topic)}</span>`).join('')}
+          ${(application.languages || []).map((language) => `<span>${escapeHtml(language)}</span>`).join('')}
+        </div>
+        ${
+          application.experience
+            ? `<div class="host-experience"><strong>Experience</strong><span>${escapeHtml(application.experience)}</span></div>`
+            : ''
+        }
+        ${
+          application.adminNote
+            ? `<div class="host-note"><strong>Admin note</strong><span>${escapeHtml(application.adminNote)}</span></div>`
+            : ''
+        }
+        <div class="event-footer">
+          <strong>${application.createdAt ? new Date(application.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'New request'}</strong>
+          <div class="card-actions">
+            <button class="small-button" data-approve-host="${escapeHtml(application.id)}" ${canReview ? '' : 'disabled'}>Approve</button>
+            <button class="small-button danger" data-reject-host="${escapeHtml(application.id)}" ${canReview ? '' : 'disabled'}>Reject</button>
+          </div>
+        </div>
+      </div>
+    </article>`;
+}
+
+async function reviewHostApplication(applicationId, status) {
+  const note =
+    status === 'rejected'
+      ? window.prompt('Optional rejection note for the user:', '') || ''
+      : window.prompt('Optional approval note:', '') || '';
+  try {
+    await api(`/hosts/admin/applications/${applicationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, adminNote: note }),
+    });
+    showToast(status === 'approved' ? 'Host approved' : 'Host rejected');
+    await loadHostApplications();
+  } catch (error) {
+    showToast(error.message);
   }
 }
 
@@ -674,6 +784,18 @@ document.querySelectorAll('[data-menu-button]').forEach((button) => {
   button.addEventListener('click', () => $('.sidebar').classList.toggle('open'));
 });
 $('#refresh-users-button').addEventListener('click', () => loadUsers());
+$('#refresh-hosts-button').addEventListener('click', () =>
+  loadHostApplications(),
+);
+$('#host-status-filter').addEventListener('change', () =>
+  loadHostApplications(),
+);
+$('#host-request-grid').addEventListener('click', (event) => {
+  const approveId = event.target.dataset.approveHost;
+  const rejectId = event.target.dataset.rejectHost;
+  if (approveId) reviewHostApplication(approveId, 'approved');
+  if (rejectId) reviewHostApplication(rejectId, 'rejected');
+});
 $('#user-role-filter').addEventListener('change', () =>
   loadUsers({ resetPage: true }),
 );
