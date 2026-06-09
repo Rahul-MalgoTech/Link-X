@@ -17,9 +17,14 @@ export async function assertTargetUser(actorId, targetId) {
   }
 
   const target = await User.findById(targetId).select(
-    '_id firstName photos onboardingComplete isPhoneVerified',
+    '_id firstName photos onboardingComplete isPhoneVerified accountStatus',
   );
-  if (!target || !target.onboardingComplete || !target.isPhoneVerified) {
+  if (
+    !target ||
+    target.accountStatus === 'suspended' ||
+    !target.onboardingComplete ||
+    !target.isPhoneVerified
+  ) {
     throw matchingError('User not found', 404);
   }
   return target;

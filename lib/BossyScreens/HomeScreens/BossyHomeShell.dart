@@ -59,6 +59,7 @@ class _BossyHomeShellState extends State<BossyHomeShell> {
         _HomePage(),
         _ExplorePage(),
         _PeoplePage(),
+        _LikesPage(),
         _ChatListPage(),
         _UserProfilePage(),
       ],
@@ -2074,6 +2075,506 @@ class _PeopleDetailPage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LikesPage extends StatefulWidget {
+  const _LikesPage();
+
+  @override
+  State<_LikesPage> createState() => _LikesPageState();
+}
+
+class _LikesPageState extends State<_LikesPage> {
+  final List<LinkxReceivedLike> _likes = [];
+  StreamSubscription<void>? _matchSubscription;
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _error;
+  int _page = 1;
+  int _total = 0;
+  bool _hasMore = false;
+  String? _actingUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLikes(refresh: true);
+    LinkxChatService.instance.connect().catchError((_) {});
+    _matchSubscription = LinkxChatService.instance.matchChanges.listen((_) {
+      if (mounted) _loadLikes(refresh: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _matchSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadLikes({required bool refresh}) async {
+    if (refresh) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _page = 1;
+      });
+    } else {
+      if (_loadingMore || !_hasMore) return;
+      setState(() => _loadingMore = true);
+    }
+
+    try {
+      final result = await LinkxApiClient().fetchReceivedLikes(
+        page: refresh ? 1 : _page + 1,
+        limit: 20,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (refresh) _likes.clear();
+        _likes.addAll(result.likes);
+        _page = result.page;
+        _total = result.total;
+        _hasMore = result.hasMore;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+        _loadingMore = false;
+      });
+    }
+  }
+
+  Future<void> _likeBack(LinkxReceivedLike item) async {
+    if (_actingUserId != null) return;
+    setState(() => _actingUserId = item.user.id);
+    try {
+      final result = await LinkxApiClient().likeUser(item.user.id);
+      if (!mounted) return;
+      if (!result.matched) {
+        _showProfileAction(
+          context,
+          'The like was saved. Contact unlocks after a mutual match.',
+        );
+        await _loadLikes(refresh: true);
+        return;
+      }
+      final index = _likes.indexWhere((like) => like.id == item.id);
+      if (index >= 0) {
+        setState(() => _likes[index] = item.copyWith(matched: true));
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("It's a match!"),
+          content: Text(
+            'You and ${item.user.name} liked each other. Chat, voice, and video are now unlocked.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Great'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) _showProfileAction(context, error.toString());
+    } finally {
+      if (mounted) setState(() => _actingUserId = null);
+    }
+  }
+
+  Future<void> _startCall(LinkxReceivedLike item, {required bool video}) async {
+    if (!item.matched) {
+      _showProfileAction(
+        context,
+        'Like ${item.user.name} back to unlock ${video ? 'video calling' : 'voice calling'}.',
+      );
+      return;
+    }
+    final result = await LinkxCallService.instance.startCall(
+      targetUserId: item.user.id,
+      targetUserName: item.user.name,
+      isVideoCall: video,
+    );
+    if (!mounted || result.success) return;
+    _showProfileAction(context, result.message ?? 'Unable to start call.');
+  }
+
+  void _openChat(LinkxReceivedLike item) {
+    if (!item.matched) {
+      _showProfileAction(
+        context,
+        'Like ${item.user.name} back to unlock chat.',
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _ChatDetailPage(
+          chat: _ChatData(
+            item.user.imageUrl,
+            item.user.name,
+            'You matched. Say hello!',
+            'now',
+            userId: item.user.id,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openProfile(LinkxReceivedLike item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _ExploreProfileDetailPage(
+          profile: _ProfileData.fromExploreUser(item.user),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: RefreshIndicator(
+        color: const Color(0xFFFAAE2B),
+        onRefresh: () => _loadLikes(refresh: true),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              sliver: SliverToBoxAdapter(
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Likes',
+                            style: TextStyle(
+                              color: Color(0xFF171717),
+                              fontFamily: 'Bricolage Grotesque',
+                              fontSize: 34,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'People who already noticed you',
+                            style: TextStyle(
+                              color: Color(0xFF817C79),
+                              fontFamily: 'Bricolage Grotesque',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFE8EF),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '$_total',
+                        style: const TextStyle(
+                          color: Color(0xFFFF3F7A),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_loading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFFFAAE2B)),
+                ),
+              )
+            else if (_error != null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _ExploreMessageState(
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Unable to load likes',
+                  message: _error!,
+                  buttonText: 'Retry',
+                  onTap: () => _loadLikes(refresh: true),
+                ),
+              )
+            else if (_likes.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _ChatEmptyState(
+                  icon: Icons.favorite_border_rounded,
+                  title: 'No likes yet',
+                  message:
+                      'When someone likes your profile, they will appear here.',
+                  onRefresh: () => _loadLikes(refresh: true),
+                ),
+              )
+            else ...[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                sliver: SliverGrid(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final item = _likes[index];
+                    return _LikeProfileCard(
+                      item: item,
+                      busy: _actingUserId == item.user.id,
+                      onProfile: () => _openProfile(item),
+                      onLikeBack: () => _likeBack(item),
+                      onCall: () => _startCall(item, video: false),
+                      onVideo: () => _startCall(item, video: true),
+                      onChat: () => _openChat(item),
+                    );
+                  }, childCount: _likes.length),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: 0.59,
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
+                  child: Center(
+                    child: _hasMore
+                        ? OutlinedButton(
+                            onPressed: _loadingMore
+                                ? null
+                                : () => _loadLikes(refresh: false),
+                            child: Text(
+                              _loadingMore ? 'Loading...' : 'Load more',
+                            ),
+                          )
+                        : const Text(
+                            'You are all caught up',
+                            style: TextStyle(color: Color(0xFF8A8581)),
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LikeProfileCard extends StatelessWidget {
+  final LinkxReceivedLike item;
+  final bool busy;
+  final VoidCallback onProfile;
+  final VoidCallback onLikeBack;
+  final VoidCallback onCall;
+  final VoidCallback onVideo;
+  final VoidCallback onChat;
+
+  const _LikeProfileCard({
+    required this.item,
+    required this.busy,
+    required this.onProfile,
+    required this.onLikeBack,
+    required this.onCall,
+    required this.onVideo,
+    required this.onChat,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final user = item.user;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onProfile,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  user.imageUrl.isEmpty
+                      ? const ColoredBox(
+                          color: Color(0xFFFFE7D0),
+                          child: Icon(
+                            Icons.person_rounded,
+                            size: 64,
+                            color: Color(0xFFFAAE2B),
+                          ),
+                        )
+                      : Image.network(
+                          user.imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: Color(0xFFFFE7D0),
+                            child: Icon(
+                              Icons.person_rounded,
+                              size: 64,
+                              color: Color(0xFFFAAE2B),
+                            ),
+                          ),
+                        ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: item.matched
+                            ? const Color(0xFF20D56B)
+                            : const Color(0xFFFF3F7A),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        item.matched ? 'MATCHED' : 'LIKED YOU',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.age == null ? user.name : '${user.name}, ${user.age}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF171717),
+                      fontFamily: 'Bricolage Grotesque',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    user.location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF817C79),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (!item.matched)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 38,
+                      child: FilledButton.icon(
+                        onPressed: busy ? null : onLikeBack,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF3F7A),
+                          padding: EdgeInsets.zero,
+                        ),
+                        icon: busy
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.favorite_rounded, size: 16),
+                        label: Text(busy ? 'Matching...' : 'Like back'),
+                      ),
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _LikeContactButton(
+                          icon: Icons.call_rounded,
+                          color: const Color(0xFF00473E),
+                          onTap: onCall,
+                        ),
+                        _LikeContactButton(
+                          icon: Icons.videocam_rounded,
+                          color: const Color(0xFFFAAE2B),
+                          onTap: onVideo,
+                        ),
+                        _LikeContactButton(
+                          icon: Icons.chat_bubble_rounded,
+                          color: const Color(0xFFFF3F7A),
+                          onTap: onChat,
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LikeContactButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _LikeContactButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 38,
+          height: 38,
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     );

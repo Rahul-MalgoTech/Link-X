@@ -137,6 +137,78 @@ router.post(
 );
 
 router.get(
+  '/likes',
+  asyncRoute(async (req, res) => {
+    const page = positiveInteger(req.query.page, 1);
+    const limit = Math.min(positiveInteger(req.query.limit, 20), 50);
+    const blocks = await Block.find({
+      $or: [{ blocker: req.user._id }, { blocked: req.user._id }],
+    }).lean();
+    const blockedUserIds = blocks.map((block) =>
+      block.blocker.toString() === req.user._id.toString()
+        ? block.blocked
+        : block.blocker,
+    );
+    const query = {
+      target: req.user._id,
+      action: 'like',
+      actor: { $nin: blockedUserIds },
+    };
+    const reactions = await Reaction.find(query)
+      .sort({ updatedAt: -1 })
+      .populate(
+        'actor',
+        'firstName photos location birthDate lookingFor happiness identity accountStatus onboardingComplete isPhoneVerified',
+      )
+      .lean();
+    const allVisibleReactions = reactions.filter(
+      (reaction) =>
+        reaction.actor &&
+        reaction.actor.accountStatus !== 'suspended' &&
+        reaction.actor.onboardingComplete &&
+        reaction.actor.isPhoneVerified,
+    );
+    const total = allVisibleReactions.length;
+    const start = (page - 1) * limit;
+    const visibleReactions = allVisibleReactions.slice(start, start + limit);
+    const actorIds = visibleReactions.map((reaction) => reaction.actor._id);
+    const matches =
+      actorIds.length === 0
+        ? []
+        : await Match.find({
+            status: 'active',
+            $and: [
+              { users: req.user._id },
+              { users: { $in: actorIds } },
+            ],
+          }).lean();
+    const matchedUserIds = new Set();
+    for (const match of matches) {
+      for (const userId of match.users) {
+        if (userId.toString() !== req.user._id.toString()) {
+          matchedUserIds.add(userId.toString());
+        }
+      }
+    }
+
+    res.json({
+      likes: visibleReactions.map((reaction) => ({
+        id: reaction._id.toString(),
+        likedAt: reaction.updatedAt,
+        matched: matchedUserIds.has(reaction.actor._id.toString()),
+        user: serializeUser(reaction.actor),
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        hasMore: page * limit < total,
+      },
+    });
+  }),
+);
+
+router.get(
   '/matches',
   asyncRoute(async (req, res) => {
     const page = positiveInteger(req.query.page, 1);
@@ -333,11 +405,26 @@ function serializeUser(user) {
   return {
     id: user._id.toString(),
     name: user.firstName || 'Linkx User',
+    age: ageFromBirthDate(user.birthDate),
     imageUrl: user.photos?.[0]?.url || '',
     location: user.location?.label || 'Nearby',
     lookingFor: user.lookingFor || '',
     interests: user.happiness || [],
+    identity: user.identity || '',
   };
+}
+
+function ageFromBirthDate(birthDate) {
+  if (!birthDate) return null;
+  const date = new Date(birthDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const birthdayPassed =
+    now.getMonth() > date.getMonth() ||
+    (now.getMonth() === date.getMonth() && now.getDate() >= date.getDate());
+  if (!birthdayPassed) age -= 1;
+  return age > 0 ? age : null;
 }
 
 export default router;

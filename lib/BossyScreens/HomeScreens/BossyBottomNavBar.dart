@@ -14,22 +14,25 @@ class BossyBottomNavBar extends StatelessWidget {
     _BossyNavItem(Icons.local_fire_department_outlined, 'Home'),
     _BossyNavItem(Icons.explore_outlined, 'Explore'),
     _BossyNavItem(Icons.groups_2_outlined, 'People'),
+    _BossyNavItem(Icons.favorite_border_rounded, 'Likes'),
     _BossyNavItem(Icons.chat_bubble_outline_rounded, 'Chat'),
     _BossyNavItem(Icons.person_outline_rounded, 'User'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    const navWidth = 327.0;
+    const navWidth = 350.0;
     const navHeight = 64.0;
-    const activeSize = 56.0;
+    const activeSize = 52.0;
+    final availableWidth = MediaQuery.sizeOf(context).width - 24;
+    final actualWidth = availableWidth < navWidth ? availableWidth : navWidth;
 
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.only(bottom: 18),
       child: Center(
         child: Container(
-          width: navWidth,
+          width: actualWidth,
           height: navHeight,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -48,7 +51,7 @@ class BossyBottomNavBar extends StatelessWidget {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutCubic,
-                left: _selectedLeft(selectedIndex, navWidth, activeSize),
+                left: _selectedLeft(selectedIndex, actualWidth, activeSize),
                 top: (navHeight - activeSize) / 2,
                 child: Container(
                   width: activeSize,
@@ -73,7 +76,7 @@ class BossyBottomNavBar extends StatelessWidget {
                           height: navHeight,
                           child: Icon(
                             item.icon,
-                            size: index == 2 ? 27 : 26,
+                            size: index == 2 ? 26 : 24,
                             color: selected
                                 ? Colors.white
                                 : const Color(0xFFA98CAA),

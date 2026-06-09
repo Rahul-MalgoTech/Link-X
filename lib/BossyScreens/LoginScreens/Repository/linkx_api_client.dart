@@ -134,6 +134,37 @@ class LinkxApiClient {
     return LinkxMatchActionResult.fromJson(data);
   }
 
+  Future<LinkxLikesPage> fetchReceivedLikes({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final data = await _get(
+      '/matching/likes',
+      queryParameters: {'page': '$page', 'limit': '$limit'},
+    );
+    final likes = data['likes'];
+    final pagination = data['pagination'];
+    return LinkxLikesPage(
+      likes: likes is List
+          ? likes
+                .whereType<Map>()
+                .map(
+                  (item) => LinkxReceivedLike.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList()
+          : const [],
+      page: pagination is Map
+          ? (pagination['page'] as num?)?.toInt() ?? page
+          : page,
+      total: pagination is Map
+          ? (pagination['total'] as num?)?.toInt() ?? 0
+          : 0,
+      hasMore: pagination is Map && pagination['hasMore'] == true,
+    );
+  }
+
   Future<LinkxMatchStatus> fetchMatchStatus(String userId) async {
     final data = await _get('/matching/status/$userId');
     return LinkxMatchStatus.fromJson(data);
@@ -958,6 +989,70 @@ class LinkxMatchActionResult {
     return LinkxMatchActionResult(
       action: json['action'] as String? ?? '',
       matched: json['matched'] == true,
+    );
+  }
+}
+
+class LinkxLikesPage {
+  final List<LinkxReceivedLike> likes;
+  final int page;
+  final int total;
+  final bool hasMore;
+
+  const LinkxLikesPage({
+    required this.likes,
+    required this.page,
+    required this.total,
+    required this.hasMore,
+  });
+}
+
+class LinkxReceivedLike {
+  final String id;
+  final DateTime? likedAt;
+  final bool matched;
+  final LinkxExploreUser user;
+
+  const LinkxReceivedLike({
+    required this.id,
+    required this.likedAt,
+    required this.matched,
+    required this.user,
+  });
+
+  factory LinkxReceivedLike.fromJson(Map<String, dynamic> json) {
+    final user = json['user'] is Map
+        ? Map<String, dynamic>.from(json['user'] as Map)
+        : const <String, dynamic>{};
+    return LinkxReceivedLike(
+      id: json['id'] as String? ?? '',
+      likedAt: DateTime.tryParse(json['likedAt'] as String? ?? ''),
+      matched: json['matched'] == true,
+      user: LinkxExploreUser.fromJson({
+        ...user,
+        'relationshipStatus': json['matched'] == true ? 'matched' : 'liked_you',
+      }),
+    );
+  }
+
+  LinkxReceivedLike copyWith({bool? matched}) {
+    final isMatched = matched ?? this.matched;
+    return LinkxReceivedLike(
+      id: id,
+      likedAt: likedAt,
+      matched: isMatched,
+      user: LinkxExploreUser(
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        imageUrl: user.imageUrl,
+        location: user.location,
+        distanceMiles: user.distanceMiles,
+        lookingFor: user.lookingFor,
+        interests: user.interests,
+        identity: user.identity,
+        relationshipStatus: isMatched ? 'matched' : 'liked_you',
+      ),
     );
   }
 }
